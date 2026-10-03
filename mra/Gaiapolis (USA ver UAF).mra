@@ -1,0 +1,98 @@
+<misterromdescription>
+    <rotation>vertical (cw)</rotation>
+    <name>Gaiapolis (USA ver UAF)</name>
+    <setname>gaiapolsu</setname>
+    <mameversion>0289</mameversion>
+    <year>1993</year>
+    <manufacturer>Konami</manufacturer>
+    <players>2</players>
+    <joystick>8</joystick>
+    <rbf>gaiapolis</rbf>
+    <region>USA</region>
+    <platform>Konami pre-GX</platform>
+
+    <!--
+      Flat image for the Gaiapolis core (target/mister/gaia_mem.sv):
+
+        0x0000000  0x300000  68000 program
+        0x0300000  0x040000  Z80 sound program, 16 x 16 KB banks
+        0x0340000  0x200000  K056832 tile ROM, 4bpp chunky
+        0x0540000  0x180000  ROZ characters (gfx3)
+        0x06C0000  0x0A0000  ROZ tile map (gfx4)
+        0x0760000  0x400000  K054539 PCM
+        0x0B60000  0x800000  K055673 sprite ROM, 64-bit words
+        0x1360000            end
+
+      Expects the MAME 0.289 merged romset (gaiapols.zip holding the parent and the
+      two clones) or the split sets: parts are found by name, whatever folder holds them.
+    -->
+    <rom index="0" zip="gaiapolsu.zip|gaiapols.zip" md5="None">
+
+        <!-- 68000 program, 16-bit big-endian words: the even byte is the first ROM -->
+        <interleave output="16">
+            <part name="123e07.24m" crc="f1a1db0f" map="01"/>
+            <part name="123e09.19l" crc="4b3b57e7" map="10"/>
+        </interleave>
+        <interleave output="16">
+            <part name="123uaf11.19p" crc="39dc1298" map="01"/>
+            <part name="123uaf12.17p" crc="c633cf52" map="10"/>
+        </interleave>
+        <part repeat="0x80000">00</part>
+
+        <!-- Z80 sound program -->
+        <part name="123e13.9c" crc="e772f822"/>
+
+        <!--
+          K056832 tile ROM. MAME's ROM_LOADTILE_WORD is
+          ROM_GROUPWORD|ROM_SKIP(3)|ROM_REVERSE, giving 5-byte groups whose
+          fifth byte (the unused 5th plane) is always 0 for this game. Dropping
+          it leaves 4bpp packed chunky, 4 bytes per 8-pixel row.
+        -->
+        <interleave output="32">
+            <part name="123e16.2t" crc="a3238200" map="0012"/>
+            <part name="123e17.2x" crc="bd0b9fb9" map="1200"/>
+        </interleave>
+
+        <!-- ROZ character ROM (gfx3), 4bpp 16x16 packed MSB -->
+        <part name="123e04.32n" crc="0d4d5b8b"/>
+        <part name="123e05.29n" crc="7d123f3e"/>
+        <part name="123e06.26n" crc="fa50121e"/>
+
+        <!-- ROZ tilemap ROM (gfx4): colour nibbles, then two attribute bytes -->
+        <part name="123e01.36j" crc="9dbc9678"/>
+        <part name="123e02.34j" crc="b8e3f500"/>
+        <part name="123e03.36m" crc="fde4749f"/>
+
+        <!-- K054539 PCM samples, shared by both chips -->
+        <part name="123e14.2g" crc="65dfd3ff"/>
+        <part name="123e15.2m" crc="7017ff07"/>
+
+        <!--
+          K055673 sprite ROM, 64-bit words (ROM_LOAD64_WORD, 8-byte stride).
+          One 64-bit word is one complete 16-pixel row of a 4bpp tile.
+        -->
+        <interleave output="64">
+            <part name="123e19.34u" crc="219a7c26" map="00000021"/>
+            <part name="123e21.34y" crc="1888947b" map="00002100"/>
+            <part name="123e18.36u" crc="3719b6d4" map="00210000"/>
+            <part name="123e20.36y" crc="490a6f64" map="21000000"/>
+        </interleave>
+    </rom>
+
+    <!-- the board's factory EEPROM: without it the game boots upside down with an error -->
+    <rom index="2">
+        <part>
+01 C9 FE 36 93 23 55 41 46 00 00 2E 00 00 03 00
+00 00 00 00 00 00 01 01 00 01 01 01 00 01 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+        </part>
+    </rom>
+    <nvram index="2" size="128"/>
+
+    <buttons names="Button 1,Button 2,Button 3,Start,Coin" default="A,B,R,Start,Select" count="3"/>
+</misterromdescription>

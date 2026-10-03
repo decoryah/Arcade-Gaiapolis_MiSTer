@@ -1,0 +1,12 @@
+`verilator_config
+// Behavioural chip models: bench-only code, counters bumped from several places.
+lint_off -rule BLKSEQ -file "*sdram_model.sv"
+lint_off -rule MULTIDRIVEN -file "*sdram_model.sv"
+lint_off -rule WIDTHTRUNC -file "*sdram_model.sv"
+lint_off -rule WIDTHEXPAND -file "*sdram_model.sv"
+lint_off -rule MULTIDRIVEN -file "*psram_model.sv"
+lint_off -rule PROCASSINIT -file "*psram_model.sv"
+// the system bench loads the chips by hierarchical writes from the wrapper
+lint_off -rule MULTIDRIVEN -file "*sram_model.sv"
+lint_off -rule MULTIDRIVEN -file "*tb_pocket_top.sv"
+lint_off -rule PROCASSINIT -file "*sdram_model.sv"

@@ -1,0 +1,8 @@
+# Text files are stored with LF endings whatever the platform that checked them out.
+* text=auto
+# Scripts run under Linux/WSL: they must keep LF in a Windows checkout too.
+*.sh  text eol=lf
+*.py  text eol=lf
+*.vlt text eol=lf
+# Binary
+*.rbf binary

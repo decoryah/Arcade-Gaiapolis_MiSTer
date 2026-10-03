@@ -1,0 +1,10 @@
+`verilator_config
+// The SDRAM controller carried over from the Pocket core is waived by path, as it was there.
+lint_off -file "*target/mister/sdram_ctrl.sv"
+// Behavioural DDR3 model and the wrapper that loads the chips by hierarchical writes: bench-only code.
+lint_off -rule BLKSEQ -file "*ddr_model.sv"
+lint_off -rule MULTIDRIVEN -file "*ddr_model.sv"
+lint_off -rule WIDTHTRUNC -file "*ddr_model.sv"
+lint_off -rule WIDTHEXPAND -file "*ddr_model.sv"
+lint_off -rule PROCASSINIT -file "*ddr_model.sv"
+lint_off -rule MULTIDRIVEN -file "*tb_mister_top.sv"

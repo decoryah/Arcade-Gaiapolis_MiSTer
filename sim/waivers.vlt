@@ -1,0 +1,16 @@
+`verilator_config
+// Vendored / generated cores are waived by path. Nothing under rtl/ is waived
+// wholesale; a genuine don't-care gets a narrow lint_off in the source with
+// a reason on the line above (docs/rtl-conventions.md).
+lint_off -file "*modules/cpu-tg68k/gen/tg68k.v"
+lint_off -file "*modules/cpu-tv80/*"
+// TG68K kernel outputs this board has no use for
+lint_off -rule UNUSEDSIGNAL -file "*rtl/gaia_main.sv" -match "*nWr*"
+lint_off -rule UNUSEDSIGNAL -file "*rtl/gaia_main.sv" -match "*nResetOut*"
+lint_off -rule UNUSEDSIGNAL -file "*rtl/gaia_main.sv" -match "*regin_out*"
+lint_off -rule UNUSEDSIGNAL -file "*rtl/gaia_main.sv" -match "*vbr_out*"
+lint_off -rule UNUSEDSIGNAL -file "*rtl/gaia_main.sv" -match "*cacr_out*"
+lint_off -rule UNUSEDSIGNAL -file "*rtl/gaia_main.sv" -match "*longword*"
+lint_off -rule UNUSEDSIGNAL -file "*rtl/gaia_main.sv" -match "*clr_berr*"
+// TG68K takes nReset asynchronously while this board uses reset synchronously
+lint_off -rule SYNCASYNCNET -file "*rtl/gaia_main.sv"

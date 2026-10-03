@@ -1,0 +1,40 @@
+set_global_assignment -name SYSTEMVERILOG_FILE Gaiapolis.sv
+set_global_assignment -name SDC_FILE Gaiapolis.sdc
+
+# the machine (the Pocket core's platform-independent RTL)
+set_global_assignment -name SEARCH_PATH rtl/data
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/clk_enables.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/dbg_overlay.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/er5911.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gaia_core.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gaia_main.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gaia_sound.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gaia_video.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k053247_draw.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k053247_objlist.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k053936_roz.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k054000.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k054321.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k054539.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k055555_mixer.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/k056832_tilemap.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/ram_arb2.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/rom_arb2.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/sprite_tables.sv
+
+# TG68K.C 68000 kernel (LGPL, Tobias Gubener), GHDL-converted
+set_global_assignment -name VERILOG_FILE modules/cpu-tg68k/gen/tg68k.v
+# tv80 Z80 (MIT, Guy Hutchison)
+set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80_alu.v
+set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80_core.v
+set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80_mcode.v
+set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80_reg.v
+set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80s_cen.v
+set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80s.v
+
+# MiSTer platform layer
+set_global_assignment -name SYSTEMVERILOG_FILE target/mister/gaia_mem.sv
+set_global_assignment -name SYSTEMVERILOG_FILE target/mister/rom_cache.sv
+set_global_assignment -name SYSTEMVERILOG_FILE target/mister/mem_test.sv
+set_global_assignment -name SYSTEMVERILOG_FILE target/mister/sdram_ctrl.sv
+set_global_assignment -name SYSTEMVERILOG_FILE target/mister/ddr_arb.sv

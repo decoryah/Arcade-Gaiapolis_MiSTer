@@ -1,0 +1,32 @@
+# ROMs and ROM images: never commit
+*.zip
+*.rom
+*.nv
+*.nvm
+
+# Quartus
+output_files/
+db/
+incremental_db/
+*.rpt
+*.summary
+*.done
+*.pin
+*.jdi
+*.sof
+*.srf
+build_id.v
+compile.log
+qdb/
+PLLJ_PLLSPE_INFO.txt
+
+# simulation
+sim/obj_*/
+sim/emu/obj_*/
+sim/*.log
+sim/emu/*.log
+artifacts/
+*.ppm
+
+# the tested release and its timing / fitter summaries
+!releases/*.summary
