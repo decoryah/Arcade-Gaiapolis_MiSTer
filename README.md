@@ -50,8 +50,9 @@ What was checked before the hardware tests, in simulation and in the Quartus too
 
 ## Install
 
-1. Put `gaiapolis_YYYYMMDD.rbf` in `/media/fat/_Arcade/cores/` and the three `.mra` files
-   from `mra/` in `/media/fat/_Arcade/` (the RBF name is the MRA's `<rbf>` plus the date).
+1. Download `releases/gaiapolis_20261004.rbf` and the three `.mra` files from `mra/` (or clone this
+   repository). Put the RBF in `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep
+   the RBF's `gaiapolis_` name and date: MiSTer finds the core by the MRA's `<rbf>` name plus the date.
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
    and USA versions' ROMs are in the merged set, or in `gaiapolsj.zip` / `gaiapolsu.zip` next to it).
    No ROMs are distributed here.
