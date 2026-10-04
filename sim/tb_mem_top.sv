@@ -67,6 +67,7 @@ module tb_mem_top #(
         .c_rd(ddr_rd), .c_we(ddr_we), .c_addr(ddr_addr), .c_burst(ddr_burst), .c_din(ddr_din), .c_be(ddr_be),
         .c_busy(ddr_busy), .c_dout(ddr_dout), .c_dready(ddr_dready),
         .r_we(rot_we), .r_addr(rot_addr), .r_din(rot_din), .r_be(rot_be),
+        .f_rd(1'b0), .f_addr(25'd0), .f_burst(8'd0), .f_busy(), .f_dready(),
         .DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
         .DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY),
         .DDRAM_RD(DDRAM_RD), .DDRAM_DIN(DDRAM_DIN), .DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE),

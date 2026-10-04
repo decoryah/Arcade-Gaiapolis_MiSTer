@@ -1,6 +1,8 @@
 #!/bin/sh
 # End-to-end bench of the MiSTer top level (Gaiapolis.sv): hps_io and the PLL stubbed, everything else real.
 #   sim/emu/run_emu.sh <mister-layout image> <eeprom.nv> [frames after load, default 110] [out prefix] [diag]
+# Environment: PROBE=1 (public signals; needed for the flip check), FLIP=1 (Flip Screen on from the start: the picture
+# the scaler gets must be the overlay's picture turned 180 degrees, one frame late), NOLOAD=1
 # The image is the first 0x1360000 bytes of the Pocket repository's gaiapols.rom (or tools/mra_build.py on a
 # mra/*.mra); the EEPROM default is gaiapols.nv from the romset (128 bytes).
 set -e
@@ -28,7 +30,7 @@ verilator --cc --exe --build -j ${JOBS:-8} -O2 -Wno-fatal -Wno-WIDTH -Wno-DECLFI
     +1364-2005ext+v -DMISTER_FB=1 -I. -I../.. ../waivers.vlt ${PROBE:+--public-flat-rw -CFLAGS -DPROBE} \
     --top-module tb_emu_top --prefix Vtb_emu_top -Mdir $OBJ \
     ../../Gaiapolis.sv ../../rtl/*.sv ../../modules/cpu-tg68k/gen/tg68k.v ../../modules/cpu-tv80/*.v \
-    ../../target/mister/gaia_mem.sv ../../target/mister/rom_cache.sv ../../target/mister/mem_test.sv ../../target/mister/sdram_ctrl.sv ../../target/mister/ddr_arb.sv \
+    ../../target/mister/gaia_mem.sv ../../target/mister/rom_cache.sv ../../target/mister/mem_test.sv ../../target/mister/sdram_ctrl.sv ../../target/mister/ddr_arb.sv ../../target/mister/flip_buf.sv \
     $S/arcade_video.v $OBJ/video_mixer_sim.sv $S/scandoubler.v $S/scanlines.v $S/gamma_corr.sv $S/hq2x.sv $S/video_freezer.sv \
     hps_io_stub.sv pll_stub.sv sync_fix.sv ../sdram_model.sv ../ddr_model.sv tb_emu_top.sv tb_emu.cpp \
     > $OBJ.log 2>&1 || { grep -E "%Error" $OBJ.log | head -30; tail -5 $OBJ.log; exit 1; }

@@ -30,3 +30,5 @@ artifacts/
 
 # the tested release and its timing / fitter summaries
 !releases/*.summary
+jtag.cdf
+c5_pin_model_dump.txt

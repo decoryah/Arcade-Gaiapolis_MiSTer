@@ -67,6 +67,7 @@ localparam CONF_STR = {
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"H0O[2],Orientation,Vert,Horz;",
 	"H0O[11],Rotation,CW,CCW;",
+	"O[12],Flip Screen,Off,On;",
 	"O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
 	"O[6],Test Mode,Off,On;",
@@ -248,19 +249,25 @@ assign SDRAM_CKE  = dram_cke;
 assign SDRAM_nCS  = 1'b0;
 assign {SDRAM_DQMH, SDRAM_DQML} = dram_dqm;
 
-// DDR3: the core's ROZ client and the rotated frame buffer's writes
+// DDR3: the core's ROZ client, the rotated frame buffer's writes, and Flip Screen's frame buffers
 wire        rot_we;
 wire [28:0] rot_addr;
 wire [63:0] rot_din;
 wire  [7:0] rot_be;
 wire        ddr_overflow;
+wire        fb_we, fl_rd, fl_busy, fl_dready;       // flip_buf: frame writes (they join screen_rotate's FIFO) and line reads
+wire [28:0] fb_addr;
+wire [63:0] fb_din;
+wire [24:0] fl_addr;
+wire  [7:0] fl_burst;
 
 ddr_arb u_ddr
 (
 	.clk(clk_sys), .reset(~pll_locked),
 	.c_rd(ddr_rd), .c_we(ddr_we), .c_addr(ddr_addr), .c_burst(ddr_burst), .c_din(ddr_din), .c_be(ddr_be),
 	.c_busy(ddr_busy), .c_dout(ddr_dout), .c_dready(ddr_dready),
-	.r_we(rot_we), .r_addr(rot_addr), .r_din(rot_din), .r_be(rot_be),
+	.r_we(rot_we | fb_we), .r_addr(fb_we ? fb_addr : rot_addr), .r_din(fb_we ? fb_din : rot_din), .r_be(fb_we ? 8'hFF : rot_be),
+	.f_rd(fl_rd), .f_addr(fl_addr), .f_burst(fl_burst), .f_busy(fl_busy), .f_dready(fl_dready),
 	.DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
 	.DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY),
 	.DDRAM_RD(DDRAM_RD), .DDRAM_DIN(DDRAM_DIN), .DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE),
@@ -341,10 +348,11 @@ end
 //          core resets seen | test done, test running, tile RAM ok, tile RAM bad words (4), Z80 stepped
 //   row 1  68000 bus address[23:0] | region read back ok: prog, snd, tile, chr, map, pcm, spr | sound heard
 //   row 2  region read stable (7), ddr rotate-FIFO overflow | lines overrun last frame (8) |
-//          sprites in the list / 4 (8) | unsupported mode met, second shadow on a pixel, 0,0,0, which renderers overran
+//          sprites in the list / 4 (8) | unsupported mode met, second shadow on a pixel, 0, 0, flip line underrun, which renderers overran
 reg  [7:0] ovl_frames, ovl_resets, ovl_overruns, ovl_overruns_l;
 reg  [2:0] ovl_ovsrc, ovl_ovsrc_l;
 reg        ovl_ovr_d, ovl_vs_d, ovl_rst_d, ovl_seen_step, ovl_seen_zstep, ovl_seen_snd, ovl_unsup, ovl_shadow, ovl_unsup_l, ovl_shadow_l;
+reg        ovl_funder, ovl_funder_l;
 always @(posedge clk_sys) begin
 	ovl_vs_d <= ga_vs; ovl_rst_d <= ga_reset;
 	if (ga_reset && !ovl_rst_d) ovl_resets <= ovl_resets + 8'd1;
@@ -354,12 +362,14 @@ always @(posedge clk_sys) begin
 		ovl_overruns_l <= ovl_overruns; ovl_overruns <= 8'd0;
 		ovl_ovsrc_l <= ovl_ovsrc; ovl_ovsrc <= 3'd0;
 		ovl_unsup_l <= ovl_unsup; ovl_unsup <= 1'b0; ovl_shadow_l <= ovl_shadow; ovl_shadow <= 1'b0;
+			ovl_funder_l <= ovl_funder; ovl_funder <= 1'b0;
 	end
 	ovl_ovr_d <= dbg_overrun;
 	if (dbg_overrun && !ovl_ovr_d && ovl_overruns != 8'hff) ovl_overruns <= ovl_overruns + 8'd1;
 	if (dbg_overrun && !ovl_ovr_d) ovl_ovsrc <= ovl_ovsrc | dbg_overrun_src;
 	if (dbg_unsupported)    ovl_unsup  <= 1'b1;
 	if (dbg_shadow_overlap) ovl_shadow <= 1'b1;
+	if (fb_underrun)        ovl_funder <= 1'b1;
 	if (dbg_step)  ovl_seen_step  <= 1'b1;
 	if (dbg_zstep) ovl_seen_zstep <= 1'b1;
 	if (ga_snd_valid && (ga_snd_l != 16'd0)) ovl_seen_snd <= 1'b1;
@@ -369,7 +379,7 @@ wire [95:0] ovl_status = {
 	ovl_resets, test_done, test_run, vram_ok, vram_bad, ovl_seen_zstep,
 	dbg_addr, test_ok[0], test_ok[1], test_ok[2], test_ok[3], test_ok[4], test_ok[5], test_ok[6], ovl_seen_snd,
 	test_stable[0], test_stable[1], test_stable[2], test_stable[3], test_stable[4], test_stable[5], test_stable[6], ddr_overflow,
-	ovl_overruns_l, dbg_objcount[9:2], ovl_unsup_l, ovl_shadow_l, 3'd0, ovl_ovsrc_l
+	ovl_overruns_l, dbg_objcount[9:2], ovl_unsup_l, ovl_shadow_l, 2'd0, ovl_funder_l, ovl_ovsrc_l
 };
 wire [7:0] ovl_r, ovl_g, ovl_b;
 dbg_overlay ovl
@@ -393,11 +403,24 @@ assign AUDIO_R = status[8] ? aud_l : aud_r;      // mono: the left mix on both
 // vertical blanking, so HBlank follows de and is high through the vertical blank
 wire hblank_c = ~ga_de;
 
+// Flip Screen: the finished picture (overlay included) turned 180 degrees, one frame late, through
+// two frame buffers in the DDR3; the picture is untouched when it is off (target/mister/flip_buf.sv)
+wire [23:0] flip_rgb;
+wire        fb_underrun;
+flip_buf u_flip
+(
+	.clk(clk_sys), .cen(ga_cen_pix), .flip_en(status[12]),
+	.rgb_i({ovl_r, ovl_g, ovl_b}), .de_i(ga_de), .vs_i(ga_vs), .rgb_o(flip_rgb),
+	.wr_hold(rot_we), .wr_we(fb_we), .wr_addr(fb_addr), .wr_din(fb_din),
+	.rd_req(fl_rd), .rd_addr(fl_addr), .rd_burst(fl_burst), .rd_busy(fl_busy), .rd_data(ddr_dout), .rd_ready(fl_dready),
+	.underrun(fb_underrun)
+);
+
 arcade_video #(.WIDTH(376), .DW(24), .GAMMA(1)) arcade_video
 (
 	.clk_video(clk_sys),
 	.ce_pix(ga_cen_pix),
-	.RGB_in({ovl_r, ovl_g, ovl_b}),
+	.RGB_in(flip_rgb),
 	.HBlank(hblank_c),
 	.VBlank(ga_vb),
 	.HSync(ga_hs),

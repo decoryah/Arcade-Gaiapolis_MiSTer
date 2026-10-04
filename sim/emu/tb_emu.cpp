@@ -37,7 +37,22 @@ static unsigned errors = 0;
 #define EMUV(n) dut->rootp->tb_emu_top__DOT__u_emu__DOT__##n
 static unsigned pk_ovl = 0, pk_core = 0, pk_gade = 0, pk_cen = 0, pk_en = 0, pk_arc = 0, pk_vga_any = 0;
 static unsigned pk_fix = 0, pk_frz = 0, pk_sd = 0, pk_rt = 0, gb_or = 0, gb_and = 0x3fffff;
+// the picture entering the flip stage (the overlay's output), three frames deep, for the Flip Screen check
+static std::vector<unsigned> ovl_now(376 * 224), ovl_f1(376 * 224), ovl_f2(376 * 224), ovl_f3(376 * 224);
+static int ovl_count = 0; static bool prev_gavs = false;
 static void probe() {
+    {
+        bool gavs = EMUV(ga_vs);
+        if (gavs && !prev_gavs) {
+            if (ovl_count == 376 * 224) { ovl_f3 = ovl_f2; ovl_f2 = ovl_f1; ovl_f1 = ovl_now; }
+            ovl_count = 0;
+        }
+        prev_gavs = gavs;
+        if (EMUV(ga_cen_pix) && EMUV(ga_de)) {
+            if (ovl_count < 376 * 224) ovl_now[ovl_count] = ((unsigned)EMUV(ovl_r) << 16) | ((unsigned)EMUV(ovl_g) << 8) | (unsigned)EMUV(ovl_b);
+            ovl_count++;
+        }
+    }
     unsigned ovl = ((unsigned)EMUV(ovl_r) << 16) | ((unsigned)EMUV(ovl_g) << 8) | (unsigned)EMUV(ovl_b);
     if (ovl > pk_ovl) pk_ovl = ovl;
     if ((unsigned)EMUV(ga_rgb) > pk_core) pk_core = EMUV(ga_rgb);
@@ -117,6 +132,8 @@ int main(int argc, char **argv) {
     dut = new Vtb_emu_top;
     dut->RESET = 1; run(40); dut->RESET = 0;
     if (diag) set_status(9, 1);                 // diagnostic overlay + memory test at the end of the load
+    bool flip = getenv("FLIP") && atoi(getenv("FLIP"));
+    if (flip) set_status(12, 1);                // Flip Screen
     run(40000);                                  // SDRAM init, cache sweeps
     if (noload) {                                // a quick check of the video path: no ROM, the overlay is the test pattern
         printf("up after %llu clocks; no image download (video-path check)\n", cycles);
@@ -146,6 +163,25 @@ int main(int argc, char **argv) {
            pk_en, pk_gade, pk_cen, pk_core, pk_ovl, pk_vga_any, pk_arc);
     printf("probe: arcade_video RGB_fix max %06x  mixer frz set on %u clocks  scandoubler set on %u clocks  mixer rt/gt/bt non-zero on %u clocks\n", pk_fix, pk_frz, pk_sd, pk_rt);
     printf("probe: gamma_bus bits ever set %06x, bits always set %06x  (bit 19 is gamma_en)\n", gb_or, gb_and);
+#endif
+#ifdef PROBE
+    if (flip) {
+        // Flip Screen: the picture the scaler gets is the flip stage's input turned 180 degrees, from the frame before
+        auto flipped_match = [&](const std::vector<unsigned> &src) {
+            long ok = 0;
+            for (int y = 0; y < VIS_H; y++) for (int x = 0; x < VIS_W; x++)
+                if (frame_last[y * VIS_W + x] == src[(VIS_H - 1 - y) * VIS_W + (VIS_W - 1 - x)]) ok++;
+            return ok;
+        };
+        long m1 = flipped_match(ovl_f1), m2 = flipped_match(ovl_f2), m3 = flipped_match(ovl_f3);
+        long fbest = m1 > m2 ? m1 : m2; if (m3 > fbest) fbest = m3;
+        long same = 0; for (int i = 0; i < VIS_W * VIS_H; i++) if (frame_last[i] == ovl_f2[i]) same++;
+        printf("flip check: the last picture equals the overlay's turned 180 degrees: %ld / %ld / %ld of %d pixels (1, 2, 3 frames back);"
+               " unflipped it would match %ld\n", m1, m2, m3, VIS_W * VIS_H, same);
+        if (fbest != VIS_W * VIS_H) { printf("  FAIL: the flipped picture is not the overlay turned 180 degrees\n"); errors++; }
+    }
+#else
+    if (flip) printf("(Flip Screen check needs PROBE=1)\n");
 #endif
     // a blank picture would make the rotation check below pass on nothing
     if (nonblack == 0) { printf("  FAIL: the picture is blank, so the rotation check proves nothing\n"); errors++; }

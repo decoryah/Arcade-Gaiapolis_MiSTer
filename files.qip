@@ -38,3 +38,4 @@ set_global_assignment -name SYSTEMVERILOG_FILE target/mister/rom_cache.sv
 set_global_assignment -name SYSTEMVERILOG_FILE target/mister/mem_test.sv
 set_global_assignment -name SYSTEMVERILOG_FILE target/mister/sdram_ctrl.sv
 set_global_assignment -name SYSTEMVERILOG_FILE target/mister/ddr_arb.sv
+set_global_assignment -name SYSTEMVERILOG_FILE target/mister/flip_buf.sv

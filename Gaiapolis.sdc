@@ -66,10 +66,20 @@ set_multicycle_path -setup 4 -from $SND -to $Z80
 set_multicycle_path -hold  3 -from $SND -to $Z80
 
 # ==============================================================================
-# The framework's HQ2x blender (sys/hq2x.sv, Blend) updates all of its registers on
-# one clock enable, the pixel enable: one clock in twelve here (8 MHz pixels on the
-# 96 MHz clock), at most one in six after the scandoubler. The framework does not
-# constrain it; its paths have far more than the one clock the analyser assumes.
+# The framework's HQ2x (sys/hq2x.sv, with its Blend) updates every register of its
+# datapath on one clock enable, ce_in: the scandoubler's ce_x4i, which fires four
+# times per input pixel, evenly spaced -- three clocks apart for this core's 12-clock
+# pixels (sys/scandoubler.v). The framework does not constrain it, and its paths have
+# three clocks, not the one the analyser assumes. (Only the registers that sit behind
+# ce_in are listed: the output side runs on ce_out, and the RAMs' own registers are
+# not touched.)
 # ==============================================================================
-set_multicycle_path -setup 4 -from [get_registers {*|Blend:*|*}] -to [get_registers {*|Blend:*|*}]
-set_multicycle_path -hold  3 -from [get_registers {*|Blend:*|*}] -to [get_registers {*|Blend:*|*}]
+set HQ [get_registers -nowarn {*|Blend:*|*}]
+foreach n {cyc nextpatt pattern Prev0 Prev1 Prev2 Curr0 Curr1 Curr2 Next0 Next1 Next2 A B D F G H
+           curbuf prevbuf offs wrdata wrdata_finished waddr wrout_addr wrpix wrin_addr2
+           old_reset_line old_reset_frame} {
+    set HQ [add_to_collection $HQ [get_registers -nowarn [format {*|Hq2x:*|%s} $n]]]
+    set HQ [add_to_collection $HQ [get_registers -nowarn [format {*|Hq2x:*|%s[*]} $n]]]
+}
+set_multicycle_path -setup 3 -from $HQ -to $HQ
+set_multicycle_path -hold  2 -from $HQ -to $HQ

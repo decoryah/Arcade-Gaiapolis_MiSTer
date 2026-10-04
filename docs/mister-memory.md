@@ -45,10 +45,11 @@ Why this way round, from the Pocket's own measurements:
   memories (`sim/run_system.sh`, `MEM=mister` against `MEM=ideal`).
 * The DDR3 is reached through one Avalon-MM port (the framework's `DDRAM_*`) that the
   framework's `screen_rotate` also writes every pixel of the rotated frame buffer
-  into, and which ignores `DDRAM_BUSY`. `ddr_arb.sv` queues those writes in a 32-deep
+  into, and which ignores `DDRAM_BUSY`. `ddr_arb.sv` queues those writes in a 64-deep
   FIFO and plays them out whenever the bus is free; the core's client holds its command
   until accepted, as the protocol says, and the arbiter never changes the selection
-  while a command is presented and stalled.
+  while a command is presented and stalled. A third client, the Flip Screen buffer
+  (below), writes through the same FIFO and reads with the lowest priority.
 * A ROZ tile-cache miss costs three map reads (the colour nibble, then two attribute
   bytes, in three regions 128-384 KB apart) before the character block. All three
   derive from the first read's address, so on a miss in the first region the other two
@@ -81,6 +82,42 @@ MiSTer builds are tuned to. The OSD option "SDRAM read capture: Late" samples a 
 later, for a module whose chips answer slowly; it is the one thing to try first if the
 picture is garbage or the self-test fails and every other region of the overlay is red.
 
+## Flip Screen
+
+The renderers have no global flip (`rtl/k056832_tilemap.sv` flags it unsupported, the
+sprite and ROZ paths only wire their flip bits through), and there is no reference for
+what the chips do when flipped, so the OSD option does not drive the game's own flip
+input. `flip_buf.sv` turns the finished picture 180 degrees instead, between the
+diagnostic overlay and `arcade_video`, so it applies to every output.
+
+* The frame buffers are two regions of the DDR3 client window, at word offset 0x80000
+  (above everything the core stores there): a word is two 24-bit pixels, a line 256 words
+  (188 used), so the address is just {frame, line, word}. The visible pixels are
+  written during the frame (one 64-bit word per two pixels, through `ddr_arb`'s write
+  FIFO, held back for a clock where `screen_rotate` writes in the same one); at the next
+  vertical sync the buffers swap.
+* The next frame is shown from the other buffer: output line y is input line 223-y,
+  pixels in the opposite order. Each line is read a line ahead, as three bursts (64, 64
+  and 60 beats) into one of two line buffers in block RAM (512 x 64 bit), and played
+  backwards, so the picture is the previous frame turned 180 degrees: one frame of delay
+  while the option is on. The sync and blanking are the core's own and do not move.
+* Whether a frame is flipped is decided at its start, from the option and whether the
+  frame before it was written whole, so switching never shows half a frame. With the
+  option off nothing is written or read and the output is the input.
+* `ddr_arb.sv` gives the line reads the lowest priority: a read starts only with nothing
+  else presented, the write FIFO empty (the two clocks the FIFO takes to load its next
+  head used to let a 64-beat burst in between every queued write, and the FIFO filled)
+  and no read data owed, and while it is in flight the core's client waits and the beats
+  go to the flip reader only. The FIFO is 64 deep now (the same RAM blocks).
+* `sim/run_flip.sh`: the module behind `ddr_arb` and the DDR3 model, a synthetic raster,
+  `screen_rotate`'s writes and a random client as competing traffic, the option switched
+  at random points inside frames. Every visible pixel of every frame is compared with the
+  frame before it turned 180 degrees (or with the input, when not flipped); the client's
+  read data is checked beat by beat; no line may start before its data is in. It passes
+  at DDR3 latencies of 8-100 clocks with 0-50 % `BUSY` (the write FIFO peaks at 10-47 of 64;
+  with the flip off a client that saturates the bus at 100 clocks and 50 % `BUSY` already
+  overflows it, so that load is beyond the design anyway).
+
 ## Verification
 
 * `sim/run_mem.sh` -- the memory subsystem against a behavioural SDRAM and an Avalon DDR3
@@ -105,13 +142,21 @@ picture is garbage or the self-test fails and every other region of the overlay 
   select. The tilemap's worst line (3,340 clocks) and the sprites' (2,900) do not depend
   on it.
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the whole design for the
-  5CSEBA6U23I7: 45 % of the ALMs, 3.99 Mbit (70 %) of block RAM in 525 of the 553 blocks --
-  nearly all of the blocks, so a core change that adds memory will need the caches or the
+  5CSEBA6U23I7: 45 % of the ALMs, 4.01 Mbit (71 %) of block RAM in 529 of the 553 blocks --
+  nearly all of the blocks (the first build used 525; Flip Screen's line buffers and the deeper
+  write FIFO took four), so a core change that adds memory will need the caches or the
   line buffers looked at -- and 65 of 112 DSPs. Timing closes at 96 MHz in the slow 100 C
-  model with every check positive: setup +0.71 ns, hold +0.25, recovery +1.15, removal +1.73
-  (`releases/gaiapolis_20261004.sta.summary`). Two things it took, both in the SDC and the top
-  level: the framework's HQ2x pixel filter (`sys/hq2x.sv`, the OSD's Scandoubler Fx "HQ2x")
-  is the worst path of a stock build, -0.57 ns, but every register in it updates on the pixel
-  enable (one clock in twelve here), so `Gaiapolis.sdc` gives it a four-cycle multicycle; and the
-  machine's reset is registered in `Gaiapolis.sv`, because the OR of its sources feeding the
-  Z80's asynchronous reset through the whole core's fan-out missed recovery by 9 ps.
+  model with every check positive: `gaiapolis_20261005` setup +0.26 ns, hold +0.25, recovery
+  +1.25, removal +1.74 (`releases/gaiapolis_20261005.sta.summary`); the first build,
+  `gaiapolis_20261004`, setup +0.71, hold +0.25, recovery +1.15, removal +1.73. A clean rebuild
+  from the committed sources closes too (setup +0.12 ns). Two things it took, both in the SDC and
+  the top level: the framework's HQ2x pixel filter (`sys/hq2x.sv`, the OSD's Scandoubler Fx "HQ2x")
+  is the worst path of a stock build (-0.57 ns in the Blend; -0.11 on one placement of the Flip
+  Screen build, in `cyc` to `nextpatt`), but every register of its datapath updates on one clock
+  enable, `ce_in`, which the scandoubler places four times per pixel, evenly: three clocks apart
+  for this core's 12-clock pixels (`sys/scandoubler.v`). `Gaiapolis.sdc` therefore gives that
+  datapath a three-cycle multicycle. (The first build used four cycles on the Blend alone, one
+  more than the enable spacing allows; re-checked under the three-cycle rule its fit is
+  unchanged: same slacks, no violation.) And the machine's reset is registered in `Gaiapolis.sv`,
+  because the OR of its sources feeding the Z80's asynchronous reset through the whole core's
+  fan-out missed recovery by 9 ps.

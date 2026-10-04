@@ -16,10 +16,10 @@ No ROMs or other copyrighted data are in this repository; you supply your own MA
 ## Status
 
 **Tested on a real MiSTer, and it works**, on a CRT screen and, in direct video, through a RetroTINK 4K.
+Flip Screen, added in `gaiapolis_20261005.rbf`, has been tried on the board too.
 
 Known issues:
 
-* No "Flip Screen" option (see "OSD options").
 * The open items inherited from the Pocket core (see "Differences from the Pocket core").
 
 What was checked before the hardware tests, in simulation and in the Quartus tool flow:
@@ -34,6 +34,14 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   overflowed, the rotated frame buffer in DDR3 is exactly the picture turned a quarter clockwise (every
   pixel, over 25 million frame-buffer writes against a DDR3 model that pushes back), and the EEPROM reads
   back through the save path. (`sim/emu/decode_overlay.py` reads the overlay out of a captured frame.)
+* `sim/run_flip.sh`: Flip Screen's frame buffers behind the DDR3 arbiter, against a DDR3 model with
+  random `BUSY`, a synthetic raster, `screen_rotate`'s writes and a random memory client as competing
+  traffic, with the option switched on and off at random points inside frames. Every visible pixel of
+  every frame is checked (turned 180 degrees from the frame before, or unchanged), and so is every beat
+  the client reads. 0 errors, at DDR3 latencies of 8 to 100 clocks and up to 50 % `BUSY`.
+  `sim/emu/run_emu.sh` with `PROBE=1 FLIP=1 NOLOAD=1` checks the same on the real top level: the picture
+  the scaler gets is exactly the overlay turned 180 degrees, a frame late, and the rotated frame buffer
+  still matches it.
 * `sim/run_system.sh`: the whole machine from reset with the real ROM set through that memory subsystem, 1,500
   frames. It boots through the self-test (the 68000's wait loop runs 19,287 iterations a frame where MAME's is
   19,314; the PCM checksum through both K054539s from the SDRAM completes at frame ~915 as in MAME's
@@ -44,15 +52,19 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   the final RTL. It has not yet reached the ROZ-heavy scenes, character select and the stages: those
   were checked against the DDR3 latency instead, in `docs/mister-memory.md`.)
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the project for the 5CSEBA6U23I7:
-  45 % of the ALMs, 70 % of the block RAM (525 of 553 blocks, so there is little left), 65 DSPs, and
-  timing closes at 96 MHz with every check positive (setup +0.71 ns, hold +0.25, recovery +1.15 in the
-  slow 100 C model; `releases/gaiapolis_20261004.sta.summary`).
+  45 % of the ALMs, 71 % of the block RAM (529 of 553 blocks, so there is almost none left), 65 DSPs, and
+  timing closes at 96 MHz with every check positive (`gaiapolis_20261005`: setup +0.26 ns, hold +0.25,
+  recovery +1.25, removal +1.74 in the slow 100 C model, `releases/gaiapolis_20261005.sta.summary`; the
+  first build, `gaiapolis_20261004`: setup +0.71). A clean rebuild from the committed sources gives a
+  slightly different fit that closes too (setup +0.12 ns).
 
 ## Install
 
-1. Download `releases/gaiapolis_20261004.rbf` and the three `.mra` files from `mra/` (or clone this
-   repository). Put the RBF in `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep
-   the RBF's `gaiapolis_` name and date: MiSTer finds the core by the MRA's `<rbf>` name plus the date.
+1. Download the newest RBF in `releases/` (`gaiapolis_20261005.rbf`, with Flip Screen) and the three
+   `.mra` files from `mra/` (or clone this repository). Put the RBF in `/media/fat/_Arcade/cores/` and the
+   MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_` name and date: MiSTer finds the core by the
+   MRA's `<rbf>` name plus the date, and takes the newest if there are several. The earlier builds stay in
+   `releases/` (`gaiapolis_20261004.rbf` is the first, without Flip Screen).
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
    and USA versions' ROMs are in the merged set, or in `gaiapolsj.zip` / `gaiapolsu.zip` next to it).
    No ROMs are distributed here.
@@ -65,6 +77,7 @@ What was checked before the hardware tests, in simulation and in the Quartus too
 | Aspect ratio | Original, Full Screen, [ARC1], [ARC2] | Original is 3:4 when rotated (Vert) and 4:3 when not; ARC1 / ARC2 are the custom ratios from `MiSTer.ini` |
 | Orientation | Vert, Horz | Not shown in direct video (see below). Vert: rotated for a monitor on its side (the frame buffer in DDR3, the framework's `screen_rotate`). Horz: the native raster |
 | Rotation | CW, CCW | Not shown in direct video (see below). Which way Vert turns the picture, if your screen wants it the other way |
+| Flip Screen | Off, On | The picture turned 180 degrees, on every output (analog, direct video, HDMI). Done on the finished picture through a frame buffer in the DDR3, so it adds one frame (16 ms) of delay while it is on and nothing when it is off. See below |
 | Scandoubler Fx | None, HQ2x, CRT 25%, CRT 50%, CRT 75% | |
 | Test Mode | Off, On | The board's test switch: the game's service menu |
 | Audio | Stereo, Mono | The board's mono/stereo input; Mono puts the left mix on both channels |
@@ -91,9 +104,14 @@ in MiSTer's usual way). From the keyboard: 1 / 2 start, 5 / 6 coin and F2 for th
 of MiSTer's usual keyboard-as-joystick. The game's own settings and high scores live in its EEPROM,
 which MiSTer saves and restores.
 
-There is no "Flip Screen" option: the game's flip setting needs the tilemap renderer's global flip,
-which the Pocket core does not implement (it is on the list of unsupported modes in
-`rtl/k056832_tilemap.sv`), so an option for it could only do nothing or draw wrongly.
+**Flip Screen** is not the game's own flip setting. That setting only asks the video chips to flip, and
+the Pocket core's renderers do not implement a global flip (it is on the list of unsupported modes in
+`rtl/k056832_tilemap.sv`), so wiring the OSD option to it would leave the picture unchanged or
+half flipped. Instead the finished picture is turned 180 degrees in `target/mister/flip_buf.sv`: each
+frame is written to a frame buffer in the DDR3 and the next frame is shown from it, read backwards. The
+controls are not flipped. Switching it on or off never shows half a frame: the first frame after
+switching on is shown as it is, the second is the first flipped one. It is checked pixel for pixel in
+simulation (`sim/run_flip.sh`, and `sim/emu/run_emu.sh` with `PROBE=1 FLIP=1 NOLOAD=1`).
 
 ## Differences from the Pocket core
 
