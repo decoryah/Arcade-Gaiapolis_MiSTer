@@ -20,6 +20,7 @@ module gaia_core #(
     input  logic        clk,                // 96 MHz
     input  logic        reset,              // the machine
     input  logic        pix_sync,           // pins the pixel phase to the platform's video clock (clk_enables)
+    input  logic        timing_mame,        // raster timing: 0 the board's (59.88 Hz), 1 MAME's (59.19 Hz)
     input  logic        vid_reset,          // the raster and clock enables only: the platform
                                             // keeps video running while the machine is held
 
@@ -131,7 +132,7 @@ module gaia_core #(
     logic  [2:0] renderers_busy;
     logic  [8:0] render_line, px, hcount, vcount;
     gaia_video u_vid (
-        .clk(clk), .reset(vid_reset), .cen_pix(cen_pix),
+        .clk(clk), .reset(vid_reset), .cen_pix(cen_pix), .timing_mame(timing_mame),
         .line_start(line_start), .render_line(render_line), .prestart(prestart),
         .renderers_busy(renderers_busy), .overrun(dbg_overrun), .overrun_src(dbg_overrun_src),
         .px(px), .px_valid(px_valid), .hcount(hcount), .vcount(vcount),

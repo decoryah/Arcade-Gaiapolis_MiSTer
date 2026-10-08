@@ -68,6 +68,7 @@ localparam CONF_STR = {
 	"H0O[2],Orientation,Vert,Horz;",
 	"H0O[11],Rotation,CW,CCW;",
 	"O[12],Flip Screen,Off,On;",
+	"O[13],Video timing,Board 59.88Hz,MAME 59.19Hz;",
 	"O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"-;",
 	"O[6],Test Mode,Off,On;",
@@ -304,7 +305,7 @@ wire  [2:0] dbg_overrun_src;
 
 gaia_core #(.HEXDIR("rtl/data")) ga
 (
-	.clk(clk_sys), .reset(ga_reset), .pix_sync(1'b0), .vid_reset(~pll_locked),
+	.clk(clk_sys), .reset(ga_reset), .pix_sync(1'b0), .timing_mame(status[13]), .vid_reset(~pll_locked),
 	.prog_req(prog_req), .prog_addr(prog_addr), .prog_ack(prog_ack), .prog_q(prog_q),
 	.tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
 	.map_req(map_req), .map_addr(map_addr), .map_ack(map_ack), .map_q(map_q),

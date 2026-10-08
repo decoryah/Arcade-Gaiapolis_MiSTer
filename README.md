@@ -4,7 +4,8 @@ Konami's **Gaiapolis** (1993, GX123 "pre-GX" hardware) for the MiSTer FPGA platf
 
 This is a MiSTer platform layer around the Gaiapolis core that **plasticbugs** wrote for the
 Analogue Pocket ([analogue-pocket-gaiapolis](https://github.com/plasticbugs/analogue-pocket-gaiapolis)):
-the whole machine is theirs and is used here unchanged (`rtl/`) -- the 68000 and the Z80
+the whole machine is theirs and is used here (`rtl/`) with one change, the raster timing option
+described under "Video timing" below -- the 68000 and the Z80
 sound board with its two K054539s, the ER5911 EEPROM, the K054000, and the video chain
 (K056832 tilemaps, K053936 rotating plane, K053247 sprites, K055555 mixer), pixel-exact
 against MAME in their verification. What is new here is everything around it: the memories,
@@ -16,7 +17,8 @@ No ROMs or other copyrighted data are in this repository; you supply your own MA
 ## Status
 
 **Tested on a real MiSTer, and it works**, on a CRT screen and, in direct video, through a RetroTINK 4K.
-Flip Screen, added in `gaiapolis_20261005.rbf`, has been tried on the board too.
+Flip Screen (added in `gaiapolis_20261005.rbf`) and the Video timing option (`gaiapolis_20261008.rbf`)
+have been tried on the board too, both timings.
 
 Known issues:
 
@@ -53,18 +55,20 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   were checked against the DDR3 latency instead, in `docs/mister-memory.md`.)
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the project for the 5CSEBA6U23I7:
   45 % of the ALMs, 71 % of the block RAM (529 of 553 blocks, so there is almost none left), 65 DSPs, and
-  timing closes at 96 MHz with every check positive (`gaiapolis_20261005`: setup +0.26 ns, hold +0.25,
-  recovery +1.25, removal +1.74 in the slow 100 C model, `releases/gaiapolis_20261005.sta.summary`; the
-  first build, `gaiapolis_20261004`: setup +0.71). A clean rebuild from the committed sources gives a
-  slightly different fit that closes too (setup +0.12 ns).
+  timing closes at 96 MHz with every check positive (`gaiapolis_20261008`: setup +0.19 ns, hold +0.24,
+  recovery +1.67, removal +1.56 in the slow 100 C model, `releases/gaiapolis_20261008.sta.summary`;
+  `gaiapolis_20261005`: setup +0.26; the first build, `gaiapolis_20261004`: setup +0.71). A clean
+  rebuild from the committed sources gives a slightly different fit that closes too (setup +0.12 ns
+  when that was tried).
 
 ## Install
 
-1. Download the newest RBF in `releases/` (`gaiapolis_20261005.rbf`, with Flip Screen) and the three
-   `.mra` files from `mra/` (or clone this repository). Put the RBF in `/media/fat/_Arcade/cores/` and the
-   MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_` name and date: MiSTer finds the core by the
+1. Download the newest RBF in `releases/` (`gaiapolis_20261008.rbf`, with Flip Screen and Video timing)
+   and the three `.mra` files from `mra/` (or clone this repository). Put the RBF in
+   `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_` name and date: MiSTer finds the core by the
    MRA's `<rbf>` name plus the date, and takes the newest if there are several. The earlier builds stay in
-   `releases/` (`gaiapolis_20261004.rbf` is the first, without Flip Screen).
+   `releases/` (`gaiapolis_20261004.rbf` is the first, without Flip Screen; `gaiapolis_20261005.rbf` adds
+   Flip Screen and runs MAME's 59.19 Hz timing only).
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
    and USA versions' ROMs are in the merged set, or in `gaiapolsj.zip` / `gaiapolsu.zip` next to it).
    No ROMs are distributed here.
@@ -78,6 +82,7 @@ What was checked before the hardware tests, in simulation and in the Quartus too
 | Orientation | Vert, Horz | Not shown in direct video (see below). Vert: rotated for a monitor on its side (the frame buffer in DDR3, the framework's `screen_rotate`). Horz: the native raster |
 | Rotation | CW, CCW | Not shown in direct video (see below). Which way Vert turns the picture, if your screen wants it the other way |
 | Flip Screen | Off, On | The picture turned 180 degrees, on every output (analog, direct video, HDMI). Done on the finished picture through a frame buffer in the DDR3, so it adds one frame (16 ms) of delay while it is on and nothing when it is off. See below |
+| Video timing | Board 59.88Hz, MAME 59.19Hz | The raster's size and sync widths. Board (the default) is what the board's K053252 timing chip produces from the values the game programs into it; MAME is MAME's fixed 512 x 264. See "Video timing" below. Takes effect at the next frame |
 | Scandoubler Fx | None, HQ2x, CRT 25%, CRT 50%, CRT 75% | |
 | Test Mode | Off, On | The board's test switch: the game's service menu |
 | Audio | Stereo, Mono | The board's mono/stereo input; Mono puts the left mix on both channels |
@@ -113,6 +118,25 @@ controls are not flipped. Switching it on or off never shows half a frame: the f
 switching on is shown as it is, the second is the first flipped one. It is checked pixel for pixel in
 simulation (`sim/run_flip.sh`, and `sim/emu/run_emu.sh` with `PROBE=1 FLIP=1 NOLOAD=1`).
 
+**Video timing.** MAME runs this game on a fixed 512 x 264 raster (15.625 kHz, 59.1856 Hz) that ignores
+the values the game writes into the K053252 timing chip. The board's chip produces something slightly
+different, and the default here follows it:
+
+* The schematic of the board (PWB353396A, Franck78's) shows the K053252's clock pin wired to the 32 MHz
+  output of the oscillator module, and its three SEL pins tied to ground: it divides by 4, an 8 MHz
+  pixel clock.
+* The game programs a horizontal count of 0x1FB and a vertical count of 0x106 (and the porches and sync
+  widths in the other registers) at boot. SiliconRE's model of the chip, traced from the silicon, turns
+  those into 508 x 263 clocks: 15.748 kHz and **59.88 Hz**, with a 48-pixel hsync and an 8-line vsync
+  (MAME's raster has 32 pixels and 3 lines).
+* The visible 376 x 224 picture, its origin and everything the renderers see are the same in both. The
+  game's logic is locked to the vertical interrupt, so on the board it runs about 1.2 % faster than in
+  MAME; the sound, which has its own clocks, does not.
+
+The option is read at the start of each frame, so it can be switched while playing. The part of this
+that cannot be checked without the real board is the exact phase of the vertical interrupt inside the
+chip's 386 x 225 active window; it stays at the end of the visible picture, as in MAME.
+
 ## Differences from the Pocket core
 
 The core's ports are the same; what sits behind them is not, because MiSTer has no PSRAM or
@@ -131,7 +155,7 @@ objects on one pixel; and the attract intro running longer than MAME's before th
 |---|---|
 | `Gaiapolis.sv`, `Gaiapolis.q*`, `Gaiapolis.sdc`, `files.qip` | the MiSTer top level (`emu`), Quartus project, timing constraints |
 | `target/mister/` | the memory subsystem (`gaia_mem`, `rom_cache`, `ddr_arb`), SDRAM controller, memory test |
-| `rtl/` | the Gaiapolis machine, unchanged from the Pocket core (`rtl/data/` generated tables, `rtl/pll*` the clock PLL) |
+| `rtl/` | the Gaiapolis machine, the Pocket core's apart from the raster timing option in `gaia_video.sv` and `gaia_core.sv` (`rtl/data/` generated tables, `rtl/pll*` the clock PLL) |
 | `modules/` | vendored TG68K.C and tv80 |
 | `sys/` | the MiSTer framework (identical to Template_MiSTer) |
 | `mra/` | the three MRAs, generated by `tools/make_mra.py` |
@@ -175,6 +199,8 @@ at about a quarter of a MHz, so a thousand frames takes hours.
   repository owner: the memory subsystem, video, audio and controls, the MRAs, the simulation benches
   and this documentation. The hardware testing is the owner's.
 * **Sorgelig** and the MiSTer team -- the framework (`sys/`, GPL).
+* **furrtek** (SiliconRE's K053252 model) and **Franck78** (the Gaiapolis board schematic) -- the sources for
+  the board's video timing.
 * **Jose Tejada (jotego)** -- JTFRAME's MiSTer SDRAM clock phase and read-capture timing, which this
   core's PLL and controller settings follow.
 

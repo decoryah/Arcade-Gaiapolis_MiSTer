@@ -11,6 +11,7 @@
 module tb_mister_top #(
     parameter int STEP_COST_BUS = 16,
     parameter int STEP_COST_INT = 8,
+    parameter bit TIMING_MAME   = 1'b0,    // 1: MAME's 512 x 264 raster instead of the board's 508 x 263
     parameter int DDR_LAT       = 24,
     parameter int DDR_BUSY_PCT  = 20
 ) (
@@ -168,7 +169,7 @@ module tb_mister_top #(
     // the core waits for the memories, as Gaiapolis.sv does
     wire core_reset = reset | ~mem_ready;
     gaia_core #(.HEXDIR("../rtl/data"), .STEP_COST_BUS(STEP_COST_BUS), .STEP_COST_INT(STEP_COST_INT)) u_core (
-        .clk(clk), .reset(core_reset), .pix_sync(1'b0), .vid_reset(reset),
+        .clk(clk), .reset(core_reset), .pix_sync(1'b0), .timing_mame(TIMING_MAME), .vid_reset(reset),
         .prog_req(prog_req), .prog_addr(prog_addr), .prog_ack(prog_ack), .prog_q(prog_q),
         .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
         .map_req(map_req), .map_addr(map_addr), .map_ack(map_ack), .map_q(map_q),

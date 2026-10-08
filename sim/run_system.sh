@@ -6,7 +6,8 @@
 # MEM=mister (default: the MiSTer memory subsystem, target/mister/gaia_mem.sv + ddr_arb.sv, with a behavioural SDRAM and
 # Avalon DDR3 in the loop) or MEM=ideal (one-clock ROM ports; LAT="+LAT_PROG=12 ..." sets their latencies),
 # DDRLAT=n, DDRBUSY=pct (the DDR3 model's latency and BUSY share), OBJ=dir (build directory, for parallel builds),
-# PACE="-GSTEP_COST_BUS=n -GSTEP_COST_INT=m" (68000 pacing overrides).
+# PACE="-GSTEP_COST_BUS=n -GSTEP_COST_INT=m" (68000 pacing overrides; add -GTIMING_MAME=1 for MAME's 512 x 264 raster
+# instead of the board's 508 x 263, the default).
 set -e
 cd "$(dirname "$0")"
 ROM="$1"; FRAMES="${2:-4}"; NAME="${3:-sys}"

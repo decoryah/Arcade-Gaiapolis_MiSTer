@@ -1,6 +1,6 @@
 # The MiSTer memory partition
 
-The machine (`rtl/`) is the Pocket core's, unchanged: it sees seven ROM ports and a
+The machine (`rtl/`) is the Pocket core's (apart from the raster totals, below): it sees seven ROM ports and a
 tile RAM port, all level request / one-cycle ack (`docs/hardware.md` section 11 of the
 Pocket repository describes them, and the loads they carry). What differs is what sits
 behind the ports, because the two boards have different memories.
@@ -118,8 +118,47 @@ diagnostic overlay and `arcade_video`, so it applies to every output.
   with the flip off a client that saturates the bus at 100 clocks and 50 % `BUSY` already
   overflows it, so that load is beyond the design anyway).
 
+## Video timing
+
+`gaia_video.sv` generates the raster the K053252 would. It has two sets of totals, chosen
+by the OSD option (`timing_mame`, taken at the start of each frame):
+
+| | board (default) | MAME |
+|---|---|---|
+| line | 508 pixels, 15.748 kHz | 512 pixels, 15.625 kHz |
+| frame | 263 lines, 133,604 clocks, 59.88 Hz | 264 lines, 135,168 clocks, 59.1856 Hz |
+| hsync | 48 pixels at 444 | 32 pixels at 448 |
+| vsync | 8 lines at 255 | 3 lines at 248 |
+
+The visible 376 x 224 picture and its origin (40, 16) are the same in both; the renderers see
+only those. How the board numbers were found:
+
+* The game writes the K053252's registers once at boot (`2002CA`-`200312` in the 68000
+  program) and its frame-interrupt acknowledge (register 14) in the interrupt handler; it
+  never reads the chip. The values: registers 0/1 = 0x01FB (H max), 2/3 = 0x0013, 4/5 = 0x0037,
+  8/9 = 0x0106 (V max), 10 = 0x0F, 11 = 0x0E, 12 = 0x75 (VSW 8 lines, HSW 6 x 8 pixels).
+* SiliconRE's Verilog model of the chip (`Konami/053252/hdl`, traced from the die) was run
+  with those values at CLK/4. First it was run with Metamorphic Force's, and reproduced the
+  numbers in SiliconRE's README exactly (384 x 264, 40-line vblank, 8-line vsync). For this game:
+  508 x 263, hblank 122 pixels (18 front porch, 48 sync, 56 back porch), vblank 38 lines (15, 8,
+  15), an active window of 386 x 225, and the frame interrupt (INT1) at the start of vblank.
+* The board's schematic (Franck78, PWB353396A) puts the K053252's CLK pin on the 32 MHz output
+  of the oscillator module (the other output is 18.432 MHz) and ties SEL0-2 to ground: CLKSEL is
+  CLK/4, internal syncs. So the pixel clock is 8 MHz and the frame 59.88 Hz.
+* MAME 0.289 runs `gaiapols` at 376 x 224 and 59.1856 Hz regardless: its driver's raster is
+  `set_raw(8 MHz, 512, ..., 264)`, which agrees with the chip's registers for Metamorphic Force
+  (6 MHz, 384 x 264) but not for this game.
+
+The chip's active window is a little larger than the picture (386 x 225 against 376 x 224); the
+extra 10 pixels and line are shown black here, as MAME crops them. The vertical interrupt stays at
+the end of the 224-line picture. The board numbers shorten the vertical blanking by a line and the
+horizontal by 4 pixels in total; the renderers' budgets (6,096 clocks a line against 6,144) have
+the room, and the overlay's overrun counter would show it if not.
+
 ## Verification
 
+* `sim/emu/run_emu.sh` with `TIMING_MAME=0` or `1` checks the frame period in clocks on the
+  real top level (1,603,248 for the board's raster, 1,622,016 for MAME's).
 * `sim/run_mem.sh` -- the memory subsystem against a behavioural SDRAM and an Avalon DDR3
   model (latency, random `BUSY`, protocol checks) with the frame buffer's write traffic
   running: the real loader at one byte per 1-6 clocks, every region read back through
@@ -146,7 +185,9 @@ diagnostic overlay and `arcade_video`, so it applies to every output.
   nearly all of the blocks (the first build used 525; Flip Screen's line buffers and the deeper
   write FIFO took four), so a core change that adds memory will need the caches or the
   line buffers looked at -- and 65 of 112 DSPs. Timing closes at 96 MHz in the slow 100 C
-  model with every check positive: `gaiapolis_20261005` setup +0.26 ns, hold +0.25, recovery
+  model with every check positive: `gaiapolis_20261008` (Video timing option) setup +0.19 ns,
+  hold +0.24, recovery +1.67, removal +1.56 (`releases/gaiapolis_20261008.sta.summary`);
+  `gaiapolis_20261005` setup +0.26 ns, hold +0.25, recovery
   +1.25, removal +1.74 (`releases/gaiapolis_20261005.sta.summary`); the first build,
   `gaiapolis_20261004`, setup +0.71, hold +0.25, recovery +1.15, removal +1.73. A clean rebuild
   from the committed sources closes too (setup +0.12 ns). Two things it took, both in the SDC and

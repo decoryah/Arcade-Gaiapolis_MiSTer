@@ -29,6 +29,9 @@ static const long IMG_LEN = 0x1360000;
 static std::vector<unsigned> frame_now(VIS_W * VIS_H), frame_last(VIS_W * VIS_H), frame_prev(VIS_W * VIS_H);
 static int de_count = 0, frames_done = 0, de_last_count = 0;
 static bool prev_vs = false;
+static unsigned long long last_frame_cycle = 0, frame_period = 0;
+static std::vector<unsigned long long> periods;
+static bool record_periods = false;
 static long long audio_nonzero = 0;
 static unsigned errors = 0;
 
@@ -81,6 +84,8 @@ static void video_watch() {
     if (vs && !prev_vs) {                       // a frame ends
         if (de_count == VIS_W * VIS_H) { frame_prev = frame_last; frame_last = frame_now; }
         de_last_count = de_count;
+        frame_period = cycles - last_frame_cycle; last_frame_cycle = cycles;
+        if (record_periods) periods.push_back(frame_period);
         de_count = 0; frames_done++;
     }
     prev_vs = vs;
@@ -134,6 +139,8 @@ int main(int argc, char **argv) {
     if (diag) set_status(9, 1);                 // diagnostic overlay + memory test at the end of the load
     bool flip = getenv("FLIP") && atoi(getenv("FLIP"));
     if (flip) set_status(12, 1);                // Flip Screen
+    bool tmame = getenv("TIMING_MAME") && atoi(getenv("TIMING_MAME"));
+    if (tmame) set_status(13, 1);               // Video timing: MAME's (the default is the board's)
     run(40000);                                  // SDRAM init, cache sweeps
     if (noload) {                                // a quick check of the video path: no ROM, the overlay is the test pattern
         printf("up after %llu clocks; no image download (video-path check)\n", cycles);
@@ -152,10 +159,42 @@ int main(int argc, char **argv) {
     int start_frames = frames_done;
     int target = start_frames + frames;
     unsigned long long guard = 0;
-    while (frames_done < target && guard++ < 4000000000ull) { tick(); video_watch(); }
+    // TIMING_TOGGLE=1: switch Video timing three times, a good way into a frame each time (at frames 3, 6 and 9
+    // after the load), and check that every frame is whole -- the board's size or MAME's, never in between
+    bool toggle = getenv("TIMING_TOGGLE") && atoi(getenv("TIMING_TOGGLE")), tnow = tmame;
+    int tg = 0; long long twait = -1;
+    record_periods = true;
+    while (frames_done < target && guard++ < 4000000000ull) {
+        tick(); video_watch();
+        if (toggle && tg < 3) {
+            if (twait < 0 && frames_done - start_frames == 3 + 3 * tg) twait = 700000;
+            else if (twait > 0 && --twait == 0) { twait = -1; tnow = !tnow; set_status(13, tnow); tg++; printf("  frame %d: Video timing -> %s\n", frames_done - start_frames, tnow ? "MAME" : "board"); }
+        }
+    }
     printf("%d frames after the load, last frame had %d visible pixels (expect %d)\n", frames_done - start_frames, de_last_count, VIS_W * VIS_H);
     if (de_last_count != VIS_W * VIS_H) { printf("  FAIL: visible pixel count\n"); errors++; }
 
+    {   // the raster's period: 12 clocks a pixel; board 508 x 263, MAME 512 x 264
+        const unsigned long long wb = 12ull * 508 * 263, wm = 12ull * 512 * 264;
+        unsigned long long want = tnow ? wm : wb;
+        printf("frame period %llu clocks (%s timing: expect %llu = %.4f Hz)\n", frame_period, tnow ? "MAME" : "board", want, 96e6 / (double)want);
+        if (frame_period != want) { printf("  FAIL: the frame period\n"); errors++; }
+        // the time between two vsync pulses is a whole frame, except across a switch, where the pulse moves (line 255
+        // of the board's 263 lines, line 248 of MAME's 264): board to MAME is 8 lines of 508 plus 248 of 512, MAME to
+        // board is 16 lines of 512 plus 255 of 508
+        const unsigned long long t_bm = 12ull * (8 * 508 + 248 * 512), t_mb = 12ull * (16 * 512 + 255 * 508);
+        int nb = 0, nm = 0, nbm = 0, nmb = 0, bad = 0;
+        for (size_t i = 1; i < periods.size(); i++) {    // [0] may span the load
+            if (periods[i] == wb) nb++; else if (periods[i] == wm) nm++;
+            // (the picture path lines vsync up with hsync, whose phase differs by 4 pixels between the two: allow 8 pixels)
+            else if (llabs((long long)periods[i] - (long long)t_bm) <= 96) nbm++;
+            else if (llabs((long long)periods[i] - (long long)t_mb) <= 96) nmb++;
+            else { bad++; printf("  frame %zu: period %llu clocks = %.3f lines of 508 / %.3f of 512\n", i, periods[i], periods[i] / 6096.0, periods[i] / 6144.0); }
+        }
+        printf("frame periods after the load: %d board, %d MAME, %d board-to-MAME, %d MAME-to-board, %d other\n", nb, nm, nbm, nmb, bad);
+        if (bad) { printf("  FAIL: a frame of the wrong length\n"); errors++; }
+        if (toggle && (nbm + nmb != tg || nb == 0 || nm == 0)) { printf("  FAIL: expected one transitional frame per switch\n"); errors++; }
+    }
     unsigned nonblack = 0; for (unsigned v : frame_last) if (v) nonblack++;
     printf("last captured frame: %u non-black pixels\n", nonblack);
 #ifdef PROBE
