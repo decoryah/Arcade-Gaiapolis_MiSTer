@@ -199,8 +199,11 @@ at about a quarter of a MHz, so a thousand frames takes hours.
   repository owner: the memory subsystem, video, audio and controls, the MRAs, the simulation benches
   and this documentation. The hardware testing is the owner's.
 * **Sorgelig** and the MiSTer team -- the framework (`sys/`, GPL).
-* **furrtek** (SiliconRE's K053252 model) and **Franck78** (the Gaiapolis board schematic) -- the sources for
-  the board's video timing.
+* **furrtek** -- [SiliconRE](https://github.com/furrtek/SiliconRE/tree/master/Konami/053252)'s silicon-traced
+  model of the K053252 timing chip, and **Franck78** -- the
+  [Konami Gaiapolis schematic](https://github.com/Franck78/The-Konami-Gaiapolis-schematic) of the board
+  (PWB353396A). Together they are the basis of the board video timing (the "Video timing" option): the
+  chip's behaviour from the first, how it is clocked and wired on this board from the second.
 * **Jose Tejada (jotego)** -- JTFRAME's MiSTer SDRAM clock phase and read-capture timing, which this
   core's PLL and controller settings follow.
 

@@ -137,12 +137,12 @@ only those. How the board numbers were found:
   program) and its frame-interrupt acknowledge (register 14) in the interrupt handler; it
   never reads the chip. The values: registers 0/1 = 0x01FB (H max), 2/3 = 0x0013, 4/5 = 0x0037,
   8/9 = 0x0106 (V max), 10 = 0x0F, 11 = 0x0E, 12 = 0x75 (VSW 8 lines, HSW 6 x 8 pixels).
-* SiliconRE's Verilog model of the chip (`Konami/053252/hdl`, traced from the die) was run
+* furrtek's SiliconRE Verilog model of the chip (https://github.com/furrtek/SiliconRE, `Konami/053252/hdl`, traced from the die) was run
   with those values at CLK/4. First it was run with Metamorphic Force's, and reproduced the
   numbers in SiliconRE's README exactly (384 x 264, 40-line vblank, 8-line vsync). For this game:
   508 x 263, hblank 122 pixels (18 front porch, 48 sync, 56 back porch), vblank 38 lines (15, 8,
   15), an active window of 386 x 225, and the frame interrupt (INT1) at the start of vblank.
-* The board's schematic (Franck78, PWB353396A) puts the K053252's CLK pin on the 32 MHz output
+* The board's schematic (Franck78, https://github.com/Franck78/The-Konami-Gaiapolis-schematic, PWB353396A) puts the K053252's CLK pin on the 32 MHz output
   of the oscillator module (the other output is 18.432 MHz) and ties SEL0-2 to ground: CLKSEL is
   CLK/4, internal syncs. So the pixel clock is 8 MHz and the frame 59.88 Hz.
 * MAME 0.289 runs `gaiapols` at 376 x 224 and 59.1856 Hz regardless: its driver's raster is
