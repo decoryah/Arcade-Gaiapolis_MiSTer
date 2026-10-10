@@ -32,3 +32,6 @@ artifacts/
 !releases/*.summary
 jtag.cdf
 c5_pin_model_dump.txt
+
+# the release zips and notes (attach the zip to the GitHub release)
+dist/
