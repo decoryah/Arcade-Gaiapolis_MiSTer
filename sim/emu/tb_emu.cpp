@@ -75,11 +75,34 @@ static void probe() {
     if (dut->VGA_DE && (dut->VGA_R | dut->VGA_G | dut->VGA_B)) pk_arc++;
 }
 #endif
+// the geometry of the analog picture as the monitor gets it: lines from the vsync pulse to the first row with picture,
+// the number of rows, and where each row starts and how wide it is, in clocks from the hsync pulse before it
+static bool g_prev_hs = false, g_prev_de = false;
+static unsigned long long g_hs_clk = 0, g_de_clk = 0;
+static int g_line = 0, g_rows = 0, g_lines_frame = 0; static long g_first = -1; static unsigned long long g_vs_clk = 0;
+static long g_smin = 1 << 30, g_smax = -1, g_wmin = 1 << 30, g_wmax = -1;
+static int geo_rows = 0, geo_lines = 0; static long geo_first = -1;
+static long geo_smin = 0, geo_smax = 0, geo_wmin = 0, geo_wmax = 0;
 static void video_watch() {
 #ifdef PROBE
     probe();
 #endif
     if (audio_nonzero == 0 && (dut->AUDIO_L != 0 || dut->AUDIO_R != 0)) audio_nonzero = 1;
+    {   // geometry at clock level (VGA_HS, VGA_DE, and the frame's end at VGA_VS)
+        bool hs = dut->VGA_HS, de = dut->VGA_DE;
+        if (hs && !g_prev_hs) { g_line++; g_lines_frame++; g_hs_clk = cycles; }
+        if (de && !g_prev_de) {
+            long s = (long)(cycles - g_hs_clk); g_de_clk = cycles; g_rows++;
+            if (g_first < 0) g_first = (long)(cycles - g_vs_clk);
+            if (s < g_smin) g_smin = s; if (s > g_smax) g_smax = s;
+        }
+        if (!de && g_prev_de) { long w = (long)(cycles - g_de_clk); if (w < g_wmin) g_wmin = w; if (w > g_wmax) g_wmax = w; }
+        g_prev_hs = hs; g_prev_de = de;
+        if (dut->VGA_VS && !prev_vs) {
+            geo_first = g_first; geo_rows = g_rows; geo_lines = g_lines_frame; geo_smin = g_smin; geo_smax = g_smax; geo_wmin = g_wmin; geo_wmax = g_wmax;
+            g_vs_clk = cycles; g_line = 0; g_lines_frame = 0; g_first = -1; g_rows = 0; g_smin = 1 << 30; g_smax = -1; g_wmin = 1 << 30; g_wmax = -1;
+        }
+    }
     bool vs = dut->VGA_VS;
     if (vs && !prev_vs) {                       // a frame ends
         if (de_count == VIS_W * VIS_H) { frame_prev = frame_last; frame_last = frame_now; }
@@ -141,6 +164,13 @@ int main(int argc, char **argv) {
     if (flip) set_status(12, 1);                // Flip Screen
     bool tmame = getenv("TIMING_MAME") && atoi(getenv("TIMING_MAME"));
     if (tmame) set_status(13, 1);               // Video timing: MAME's (the default is the board's)
+    {   // CRT Adjust (status[14] on, [19:15] H-Size, [26:20] H-Position, [31:27] V-Shift), values as the OSD menu counts them
+        auto field = [&](int lo, int w, int v) { for (int i = 0; i < w; i++) set_status(lo + i, (v >> i) & 1); };
+        if (getenv("CRT") && atoi(getenv("CRT"))) set_status(14, 1);
+        if (getenv("HSIZE")) { int v = atoi(getenv("HSIZE")); field(15, 5, v >= 0 ? v : 25 + v); }
+        if (getenv("HPOS")) { int v = atoi(getenv("HPOS")); field(20, 7, v >= 0 ? v : 77 + v); }
+        if (getenv("VSHIFT")) field(27, 5, atoi(getenv("VSHIFT")) & 31);
+    }
     run(40000);                                  // SDRAM init, cache sweeps
     if (noload) {                                // a quick check of the video path: no ROM, the overlay is the test pattern
         printf("up after %llu clocks; no image download (video-path check)\n", cycles);
@@ -183,12 +213,14 @@ int main(int argc, char **argv) {
         // of the board's 263 lines, line 248 of MAME's 264): board to MAME is 8 lines of 508 plus 248 of 512, MAME to
         // board is 16 lines of 512 plus 255 of 508
         const unsigned long long t_bm = 12ull * (8 * 508 + 248 * 512), t_mb = 12ull * (16 * 512 + 255 * 508);
+        // (with a V-Shift the sync of the transitional frame moves by that many lines of the shift register as well)
+        const long long tol = 96 + (getenv("VSHIFT") ? 6144LL * (llabs(atoi(getenv("VSHIFT"))) + 1) : 0);
         int nb = 0, nm = 0, nbm = 0, nmb = 0, bad = 0;
         for (size_t i = 1; i < periods.size(); i++) {    // [0] may span the load
             if (periods[i] == wb) nb++; else if (periods[i] == wm) nm++;
             // (the picture path lines vsync up with hsync, whose phase differs by 4 pixels between the two: allow 8 pixels)
-            else if (llabs((long long)periods[i] - (long long)t_bm) <= 96) nbm++;
-            else if (llabs((long long)periods[i] - (long long)t_mb) <= 96) nmb++;
+            else if (llabs((long long)periods[i] - (long long)t_bm) <= tol) nbm++;
+            else if (llabs((long long)periods[i] - (long long)t_mb) <= tol) nmb++;
             else { bad++; printf("  frame %zu: period %llu clocks = %.3f lines of 508 / %.3f of 512\n", i, periods[i], periods[i] / 6096.0, periods[i] / 6144.0); }
         }
         printf("frame periods after the load: %d board, %d MAME, %d board-to-MAME, %d MAME-to-board, %d other\n", nb, nm, nbm, nmb, bad);
@@ -197,6 +229,9 @@ int main(int argc, char **argv) {
     }
     unsigned nonblack = 0; for (unsigned v : frame_last) if (v) nonblack++;
     printf("last captured frame: %u non-black pixels\n", nonblack);
+    printf("geometry (last frame): %d rows with picture, %d lines a frame; first row %ld clocks after the vsync pulse (%.3f lines);"
+           " rows start %ld..%ld clocks after hsync, %ld..%ld clocks wide\n",
+           geo_rows, geo_lines, geo_first, geo_first / (tnow ? 6144.0 : 6096.0), geo_smin, geo_smax, geo_wmin, geo_wmax);
 #ifdef PROBE
     printf("probe: status[9]=%u  core de clocks %u  core cen_pix ticks %u  max core rgb %06x  max overlay out %06x  VGA nonzero clocks %u (in DE %u)\n",
            pk_en, pk_gade, pk_cen, pk_core, pk_ovl, pk_vga_any, pk_arc);

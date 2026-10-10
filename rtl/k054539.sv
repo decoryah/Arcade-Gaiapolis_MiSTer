@@ -19,11 +19,15 @@
 // 0x201 bit 0 is set, else keying off), and adds its sample times volume x
 // pan x gain to the mix; a reverb ring of 8192 x int16 lives in the chip RAM,
 // the current entry is read into the mix and cleared, and each channel adds
-// into it at its own delay. Positions write back to regs 0x0c-0x0e unless
-// 0x22f bit 7 holds them. Volumes are Q2.14 tables from
-// tools/gen_k054539_tables.py; the per-channel gain MAME applies at reset
-// for this game (chip 1 channels 5-7 x2.0, the "voice" channels) comes in
-// through GAIN_Q14.
+// into it at its own delay (the ring index is rdelta + position added to the
+// position, as MAME's). Positions write back to regs 0x0c-0x0e unless
+// 0x22f bit 7 holds them. 16-bit PCM steps two bytes a sample from whatever
+// address the channel has, aligned or not. While 0x22f bit 0 is set (MAME's
+// UPDATE_AT_KEYON, its default) a write to a channel's position registers is
+// held in a latch and only copied into the registers by that channel's key-on.
+// Volumes are Q2.14 tables from tools/gen_k054539_tables.py; the per-channel
+// gain MAME applies at reset for this game (chip 1 channels 5-7 x2.0, the
+// "voice" channels) comes in through GAIN_Q14.
 //------------------------------------------------------------------------------
 `default_nettype none
 
@@ -65,6 +69,32 @@ module k054539 #(
     wire        cpu_wr    = cs && wr;
     wire        cpu_wr_ch = cpu_wr && !addr[9];         // 0x000-0x1ff
     wire        cpu_wr_g  = cpu_wr &&  addr[9];         // 0x200-0x22f
+    typedef enum logic [4:0] {
+        A_IDLE, A_RVB_RD, A_RVB_CLR, A_CH, A_CHF, A_CHX, A_CHV1, A_CHV2, A_CHV3, A_CHV4, A_STEP, A_ROM, A_ROMW, A_ROM2, A_DEC,
+        A_RVB_RMW, A_RVB_RD2, A_RVB_WR, A_NEXT, A_OUT
+    } ast_t;
+    ast_t ast;
+
+    // UPDATE_AT_KEYON (MAME's default for every game, k054539.cpp): while the chip is enabled (0x22f bit 0) a write
+    // to a channel's position registers (0x0c-0x0e of its 0x20 block) is held in a latch and the register keeps its
+    // value; the key-on write copies the latched bytes into the registers of each channel it starts. Without it a
+    // game that programs the next note's start while the last still sounds restarts the sounding channel at once --
+    // a burst of noise on every such drum or instrument. The key-on is applied between samples, a byte copy first.
+    logic [23:0] posl [8];
+    logic  [7:0] ko_pend;
+    logic        cp_run;
+    logic  [1:0] cp_i;
+    logic  [2:0] cp_ch;
+    wire         lat_on  = greg[6'h2f][0];
+    wire         lat_hit = cpu_wr_ch && lat_on && !addr[8] && addr[4:0] >= 5'h0c && addr[4:0] <= 5'h0e;
+    wire         cpu_chw = cpu_wr_ch && !lat_hit;       // a write that really goes to the channel RAM
+    wire   [8:0] cp_addr = {1'b0, cp_ch, 5'h0c} + {7'd0, cp_i};
+    wire   [7:0] cp_byte = (cp_i == 2'd0) ? posl[cp_ch][7:0] : (cp_i == 2'd1) ? posl[cp_ch][15:8] : posl[cp_ch][23:16];
+    logic  [2:0] ko_first;
+    always_comb begin
+        ko_first = 3'd0;
+        for (int i = 7; i >= 0; i--) if (ko_pend[i]) ko_first = 3'(i);
+    end
     // the renderer's position write-back, three bytes through the one write
     // port; a CPU write to the same bytes is newer and cancels it
     logic        wb_run;
@@ -76,8 +106,9 @@ module k054539 #(
     always_ff @(posedge clk) begin
         chreg_cpu_q <= chreg[addr[8:0]];
         chreg_q     <= chreg[chreg_rd];
-        if (cpu_wr_ch)   chreg[addr[8:0]] <= wdata;
-        else if (wb_run) chreg[wb_addr]   <= wb_byte;
+        if (cpu_chw)        chreg[addr[8:0]] <= wdata;
+        else if (cp_run)    chreg[cp_addr]   <= cp_byte;
+        else if (wb_run)    chreg[wb_addr]   <= wb_byte;
     end
     // 32 KB chip RAM: byte port for the Z80, 16-bit port for the reverb ring
     // 32 KB chip RAM as two byte-wide true dual-port blocks (low and high
@@ -140,6 +171,8 @@ module k054539 #(
         if (reset) begin
             for (int i = 0; i < 48; i++) greg[i] <= '0;
             wb_run <= 1'b0; wb_i <= '0;
+            ko_pend <= '0; cp_run <= 1'b0; cp_i <= '0; cp_ch <= '0;
+            for (int i = 0; i < 8; i++) posl[i] <= '0;
             cur_ptr <= '0; rom_bank <= '0; pst <= P_IDLE; strm_req <= 1'b0;
             timer_out <= 1'b0; tcount <= '0; rd_d <= 1'b0;
         end else begin
@@ -166,11 +199,31 @@ module k054539 #(
             endcase
 
             // ---- the renderer's key-off and position write-back ----
-            if (ko_we) greg[6'h2c][ko_ch] <= 1'b0;
+            if (ko_we && !greg[6'h2f][7]) greg[6'h2c][ko_ch] <= 1'b0;   // keyoff(): only while the registers update
+            if (lat_hit) begin
+                case (addr[4:0])
+                    5'h0c: posl[addr[7:5]][7:0]   <= wdata;
+                    5'h0d: posl[addr[7:5]][15:8]  <= wdata;
+                    default: posl[addr[7:5]][23:16] <= wdata;
+                endcase
+            end
+            // key-ons wait for the copy; the copier runs between samples, when the renderer and the
+            // write-back are idle and the CPU is not using the channel RAM
+            if (!cp_run) begin
+                if (ko_pend != 8'd0 && ast == A_IDLE && !wb_run && !cpu_chw) begin
+                    cp_run <= 1'b1; cp_i <= 2'd0; cp_ch <= ko_first;
+                end
+            end else if (!cpu_chw) begin
+                if (cp_i == 2'd2) begin
+                    cp_run <= 1'b0;
+                    ko_pend[cp_ch] <= 1'b0;
+                    if (!greg[6'h2f][7]) greg[6'h2c][cp_ch] <= 1'b1;
+                end else cp_i <= cp_i + 2'd1;
+            end
             if (wb_we) begin wb_run <= 1'b1; wb_i <= '0; wb_chl <= wb_ch; wb_posl <= wb_pos; end
             else if (wb_run) begin
-                if (cpu_wr_ch && addr[8:5] == {1'b0, wb_chl} && addr[4:0] >= 5'h0c && addr[4:0] <= 5'h0e) wb_run <= 1'b0;
-                else if (!cpu_wr_ch) begin
+                if (cpu_chw && addr[8:5] == {1'b0, wb_chl} && addr[4:0] >= 5'h0c && addr[4:0] <= 5'h0e) wb_run <= 1'b0;
+                else if (!cpu_chw) begin
                     if (wb_i == 2'd2) wb_run <= 1'b0; else wb_i <= wb_i + 2'd1;
                 end
             end
@@ -178,8 +231,12 @@ module k054539 #(
             // ---- writes to the globals (channel bytes go to the RAM above) ----
             if (cpu_wr_g) begin
                 case (addr)
-                    10'h214: greg[6'h2c] <= greg[6'h2c] | wdata;               // key on
-                    10'h215: greg[6'h2c] <= greg[6'h2c] & ~wdata;              // key off
+                    10'h214: if (lat_on) ko_pend <= ko_pend | wdata;                       // key on, after the latch copy
+                             else if (!greg[6'h2f][7]) greg[6'h2c] <= greg[6'h2c] | wdata;
+                    10'h215: begin
+                        ko_pend <= ko_pend & ~wdata;
+                        if (!greg[6'h2f][7]) greg[6'h2c] <= greg[6'h2c] & ~wdata;      // key off
+                    end
                     10'h22d: cur_ptr <= cur_ptr + 17'd1;      // the RAM write is port A above
                     10'h22e: begin rom_bank <= wdata; cur_ptr <= '0; end
                     10'h227: begin tcount <= '0; timer_out <= 1'b0; end
@@ -203,11 +260,6 @@ module k054539 #(
     // eight channels. Every position step fetches a sample, as MAME does, so
     // a pitch above 1.0 costs one ROM read per step; DPCM depends on that.
     // The ROM port is shared with the Z80's streaming reads, which win.
-    typedef enum logic [4:0] {
-        A_IDLE, A_RVB_RD, A_RVB_CLR, A_CH, A_CHF, A_CHX, A_CHV1, A_CHV2, A_CHV3, A_CHV4, A_STEP, A_ROM, A_ROMW, A_ROM2, A_DEC,
-        A_RVB_RMW, A_RVB_RD2, A_RVB_WR, A_NEXT, A_OUT
-    } ast_t;
-    ast_t ast;
 
     logic [23:0] ch_pos  [8];
     logic [15:0] ch_pfrac[8];
@@ -298,7 +350,9 @@ module k054539 #(
     assign rom_addr = strm_req ? strm_addr : rrom_addr;
     wire   rrom_ack = rom_ack && rrom_req && !strm_req;
 
-    wire [21:0] fetch_addr = is_dpcm ? cur_pos[22:1] : (is_16 ? {cur_pos[21:1], 1'b0} : cur_pos[21:0]);
+    // 16-bit samples are read as two bytes at cur_pos and cur_pos + 1, whatever the alignment (MAME: read_byte(pos) |
+    // read_byte(pos + 1) << 8); an odd start address is common in this game's music
+    wire [21:0] fetch_addr = is_dpcm ? cur_pos[22:1] : cur_pos[21:0];
 
     always_ff @(posedge clk) begin
         if (reset) begin
@@ -373,7 +427,8 @@ module k054539 #(
                     if (cur_pfrac[24:16] == 9'd0) ast <= A_RVB_RMW;
                     else begin
                         cur_pfrac <= cur_pfrac - 25'h10000;
-                        cur_pos   <= neg_dir ? cur_pos - 24'd1 : cur_pos + 24'd1;
+                        // a 16-bit sample steps two bytes (MAME: pdelta <<= 1)
+                        cur_pos   <= neg_dir ? cur_pos - (is_16 ? 24'd2 : 24'd1) : cur_pos + (is_16 ? 24'd2 : 24'd1);
                         cur_pval  <= cur_val;
                         ast <= A_ROMW;
                     end
@@ -386,7 +441,7 @@ module k054539 #(
                     end
                 end
                 A_ROM2: begin
-                    if (!rrom_req) begin if (!strm_req) begin rrom_addr <= {cur_pos[21:1], 1'b1}; rrom_req <= 1'b1; end end
+                    if (!rrom_req) begin if (!strm_req) begin rrom_addr <= cur_pos[21:0] + 22'd1; rrom_req <= 1'b1; end end
                     else if (rrom_ack) begin rrom_req <= 1'b0; rbyte2 <= rom_q; ast <= A_DEC; end
                 end
                 A_DEC: begin
@@ -417,7 +472,10 @@ module k054539 #(
                 A_RVB_RMW: begin
                     lval <= lval + (($signed(cur_val) * $signed({1'b0, lvol})) >>> 14);
                     rval <= rval + (($signed(cur_val) * $signed({1'b0, rvol})) >>> 14);
-                    rvb_addr <= 13'(rdelta + reverb_pos);
+                    // MAME adds the ring position twice: rdelta = (delay + pos) & 0x3fff, then the entry is
+                    // rbase[(rdelta + pos) & 0x1fff]. Measured against its output band by band, one add is 10 %
+                    // off in the mid bands and 2x off above 12 kHz; two match to 1.00 everywhere.
+                    rvb_addr <= 13'(rdelta + reverb_pos + reverb_pos);
                     ast <= A_RVB_RD2;
                 end
                 A_RVB_RD2: ast <= A_RVB_WR;                    // rvb_q catches up with rvb_addr

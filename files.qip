@@ -31,6 +31,8 @@ set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80_mcode.v
 set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80_reg.v
 set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80s_cen.v
 set_global_assignment -name VERILOG_FILE modules/cpu-tv80/tv80s.v
+# CRT Adjust (GPL-3.0, rmonic79): analog picture size and position
+set_global_assignment -name SYSTEMVERILOG_FILE modules/crt-adjust/crt_adjust.sv
 
 # MiSTer platform layer
 set_global_assignment -name SYSTEMVERILOG_FILE target/mister/gaia_mem.sv

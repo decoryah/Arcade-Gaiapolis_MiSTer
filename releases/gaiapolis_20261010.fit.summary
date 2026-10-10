@@ -1,0 +1,20 @@
+Fitter Status : Successful - Sat Oct 10 23:45:47 2026
+Quartus Prime Version : 17.0.2 Build 602 07/19/2017 SJ Lite Edition
+Revision Name : Gaiapolis
+Top-level Entity Name : sys_top
+Family : Cyclone V
+Device : 5CSEBA6U23I7
+Timing Models : Final
+Logic utilization (in ALMs) : 19,744 / 41,910 ( 47 % )
+Total registers : 28571
+Total pins : 145 / 314 ( 46 % )
+Total virtual pins : 0
+Total block memory bits : 4,039,113 / 5,662,720 ( 71 % )
+Total RAM Blocks : 532 / 553 ( 96 % )
+Total DSP Blocks : 65 / 112 ( 58 % )
+Total HSSI RX PCSs : 0
+Total HSSI PMA RX Deserializers : 0
+Total HSSI TX PCSs : 0
+Total HSSI PMA TX Serializers : 0
+Total PLLs : 3 / 6 ( 50 % )
+Total DLLs : 0 / 4 ( 0 % )

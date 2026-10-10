@@ -155,10 +155,103 @@ the end of the 224-line picture. The board numbers shorten the vertical blanking
 horizontal by 4 pixels in total; the renderers' budgets (6,096 clocks a line against 6,144) have
 the room, and the overlay's overrun counter would show it if not.
 
+## CRT Adjust
+
+rmonic79's `crt_adjust` (`modules/crt-adjust/crt_adjust.sv`, GPL-3.0 or later; see `modules/VENDOR.md` for the
+one-line sign fix) sits between the Flip Screen stage and `arcade_video`, in `Gaiapolis.sv`. It writes each
+line into a ping-pong line buffer at the pixel enable and reads the previous line out at its own enable
+(`crt_tick`: one pixel every 48 + H-Size quarters of a clock, restarted on the module's line reference
+`hs_ref_out`); H-Position moves the read window (HPOS_CONTENTSHIFT, so the hsync stays native), V-Shift delays the
+vsync through a per-line shift register. Cost: three M10K blocks for the 1,024 x 24 line buffer and about 100 ALMs.
+Off, `arcade_video` gets the signals it always got (a static mux on `crt_on`); on, it gets the module's, with
+`ce_pix` = the read enable. It is gated off while the scandoubler is in use (`Scandoubler Fx` or
+`forced_scandoubler`): the scandoubler measures the pixel period and assumes it is constant per line.
+
+What the raster of this core needed in the glue, all found by measuring the real top level in
+`sim/emu/run_emu.sh` (the bench reports the rows with picture, where they start after the hsync pulse and how wide
+they are, and the clocks from the vsync pulse to the first row):
+
+* **The vertical blank is passed one line ahead.** The module's line starts at the hsync *rise*, which in this
+  raster is 64 pixels before the line counter wraps (the picture is at pixels 40-415, the hsync at 444-491).
+  It reads a line after it writes it, so the line it is emitting was written under the *previous* hsync rise,
+  and it gates it with the vertical blank it sampled one rise earlier -- the blank of the line before. Passing
+  the blank of the next line (`crt_vb_next`, from `dbg_vcount`) makes the gate the blank of the line being
+  emitted; passing the raw blank loses the first and last row of the 224.
+* **The vsync is delayed one line** (`crt_vs_t = 1 - V-Shift`), because the picture is emitted a line late
+  against the native sync; with that, and `VBlank` held at 0 in front of `arcade_video` (the module's
+  horizontal blank already carries the vertical gate), the first row comes the same number of clocks after
+  the vsync pulse as without the module. A negative delay is counted from 264 lines, the length the module is
+  built for; the board's frame is 263, so it is one line more negative with the board timing.
+* **A one-pixel bias** (`CRT_HBIAS`): the picture comes out one pixel later than the unadjusted one at
+  H-Position 0, and the bias cancels it. With it, CRT Adjust on at 0, 0, 0 reproduces the unadjusted output
+  exactly: the same 224 rows, the same start (1,248 clocks after the hsync pulse) and width (4,512 clocks) for
+  every row, the same first-row distance from the vsync, and a byte-identical picture, with the board's and with
+  MAME's timing. The rotated frame buffer in DDR3 matches it pixel for pixel as before.
+* **The picture is blanked while the output hsync is active.** A picture that runs past the end of its line
+  (H-Size too large for its H-Position) used to leave a one-pixel blip of DE just after the next hsync rise;
+  the HDMI scaler and `screen_rotate` would count it as a pixel.
+* **The ranges are what the line holds.** The picture runs from 104 to 480 of the 508 pixels after the hsync
+  rise, and the module reads at 48 + H-Size quarters per pixel, so the picture ends at
+  (480 + H-Position) x (48 + H-Size) quarters, which must stay under 4 x 6,096 (4 x 6,144 for MAME's line).
+  Without H-Position, H-Size +2 fits and +3 does not; at H-Position -48, +8 fits. Hence the menu's H-Size up to
+  +8 and H-Position up to +28 (the room to the right at normal size).
+* **One clock of delay in front of the select.** The first build with the module missed timing by 0.24 ns, on a path
+  that has nothing to do with it: from the 68000's register file through the diagnostic overlay's address
+  squares to the picture. The select between the module's output and the plain picture added a logic level to
+  it. The picture's signals (`vq_*`) are now registered once before the select, which put the path back to its
+  old depth (setup slack -0.24 ns became +0.09 ns) at the cost of one clock (10 ns) of video delay, with CRT
+  Adjust on or off.
+* **A negative H-Position blanked the picture in the module as published**: it chooses between
+  `$signed(hoffset)` and an unsigned zero, which makes the result unsigned in Verilog, so -1 became 511 and the
+  window moved out of the line. The line now sign-extends explicitly.
+
+The vertical shift's direction was checked at the signal level: a positive V-Shift puts the first row more lines
+after the vsync pulse, which is lower on a monitor. The horizontal and vertical amounts, the H-Size widths
+(376 pixels of 8 to 14 clocks) and the limits above were each measured on the real top level, with the
+picture's pixel count and content unchanged.
+
+## Sound
+
+The Pocket core's K054539 (`rtl/k054539.sv`) and its two-chip mix (`rtl/gaia_sound.sv`) were checked against
+MAME 0.289 playing `gaiapols`: a 130-second attract run with every Z80 write to both chips logged, the same
+writes replayed through the RTL chips, and the result compared with MAME's own wav (lag -76 samples) second
+by second. The Pocket chip's median per-second correlation was 0.915 (31 of 68 sounding seconds below 0.9).
+Changes, each to match MAME's `k054539.cpp`:
+
+* a 16-bit sample steps `pdelta << 1`, two bytes, and fetches `pos` and `pos + 1` whatever the alignment (the
+  chip forced an even address);
+* `UPDATE_AT_KEYON` (MAME's default): while register 0x22f bit 0 is set, a write to a channel's 0x0c-0x0e is
+  kept in a latch (`posl`) and the register is left alone; the key-on write copies the latched bytes in for each
+  channel it starts (`ko_pend`, then a three-byte copy between samples); key-on and key-off are gated by bit 7
+  of 0x22f;
+* the reverb ring index is `rdelta + pos + pos` (MAME's `rdelta = (delay + pos) & 0x3fff`, then
+  `rbase[(rdelta + pos) & 0x1fff]`); one add was 10 % off in the mid bands and 2x off above 12 kHz;
+* the sum of the two chips saturates (`sat_add`) as MAME's mixer clips, rather than wrapping a loud overlap into a
+  full-scale click of the opposite sign.
+
+With these the median is 0.964 (one second below 0.9), bit-identical to the Monster Maulers core's chip (the
+same chip, where the changes were worked out) and in agreement with a line-by-line C++ transcription of MAME's
+chip. **The channel order is MAME's, not the Pocket core's**: `mystwarr.cpp` adds each chip's output 0 to the
+right speaker ("stereo channels are inverted"), and `gaiapols` uses that machine config; the old order
+(`l1 + l2` left, `r1 + r2` right) correlated 0.4-0.66 against MAME's audio, the swapped one 0.97. So
+`snd_l = sat(r1 + r2)` and `snd_r = sat(l1 + l2)`. Audio Mono (`AUDIO_R = AUDIO_L`) is unchanged.
+
+The whole-machine bench (110 frames) is silent that early, so these changes are covered at the chip level;
+the whole machine with them boots and runs as before (every frame the board period, the picture and the frame
+buffer as before).
+
 ## Verification
 
 * `sim/emu/run_emu.sh` with `TIMING_MAME=0` or `1` checks the frame period in clocks on the
   real top level (1,603,248 for the board's raster, 1,622,016 for MAME's).
+* `sim/emu/run_emu.sh` with `NOLOAD=1` and `CRT=1 HSIZE=.. HPOS=.. VSHIFT=..` (CRT Adjust, on the real top
+  level): at 0, 0, 0 the picture's geometry and the scaler picture (byte for byte) are those of the run without
+  CRT Adjust, with both timings; H-Position moves the rows by exactly that many pixels (-48..+28), H-Size makes
+  every pixel 8 to 14 clocks, V-Shift moves the first row by exactly that many lines (both timings), and the
+  picture is 376 x 224 and unchanged in every case that fits the line. Past the limits (H-Size +3 at
+  H-Position 0, H-Size -16 with H-Position -48) the picture is cut at the line end or the hsync, and nothing
+  appears inside the hsync pulse. With Flip Screen on as well the picture is still the overlay turned 180
+  degrees. The rotated frame buffer matches the picture pixel for pixel with CRT Adjust on.
 * `sim/run_mem.sh` -- the memory subsystem against a behavioural SDRAM and an Avalon DDR3
   model (latency, random `BUSY`, protocol checks) with the frame buffer's write traffic
   running: the real loader at one byte per 1-6 clocks, every region read back through
@@ -181,11 +274,13 @@ the room, and the overlay's overrun counter would show it if not.
   select. The tilemap's worst line (3,340 clocks) and the sprites' (2,900) do not depend
   on it.
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the whole design for the
-  5CSEBA6U23I7: 45 % of the ALMs, 4.01 Mbit (71 %) of block RAM in 529 of the 553 blocks --
+  5CSEBA6U23I7: 47 % of the ALMs, 4.04 Mbit (71 %) of block RAM in 532 of the 553 blocks --
   nearly all of the blocks (the first build used 525; Flip Screen's line buffers and the deeper
-  write FIFO took four), so a core change that adds memory will need the caches or the
+  write FIFO took four; CRT Adjust's line buffer three more), so a core change that adds memory will need the caches or the
   line buffers looked at -- and 65 of 112 DSPs. Timing closes at 96 MHz in the slow 100 C
-  model with every check positive: `gaiapolis_20261008` (Video timing option) setup +0.19 ns,
+  model with every check positive: `gaiapolis_20261010` (CRT Adjust and the sound fixes) setup +0.40 ns,
+  hold +0.25, recovery +1.54, removal +1.65 (`releases/gaiapolis_20261010.sta.summary`, seed 1; seed 2 +0.39);
+  `gaiapolis_20261008` (Video timing option) setup +0.19 ns,
   hold +0.24, recovery +1.67, removal +1.56 (`releases/gaiapolis_20261008.sta.summary`);
   `gaiapolis_20261005` setup +0.26 ns, hold +0.25, recovery
   +1.25, removal +1.74 (`releases/gaiapolis_20261005.sta.summary`); the first build,

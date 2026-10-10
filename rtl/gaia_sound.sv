@@ -194,9 +194,21 @@ module gaia_sound #(
     end
     assign wait_n = !((rom_sel && !rom_have) || k1_stall || k2_stall);
 
-    // mix: the two chips sum; the K054321 volume is applied by the platform
-    assign snd_l = l1 + l2;
-    assign snd_r = r1 + r2;
+    // mix: the two chips sum; the K054321 volume is applied by the platform. MAME routes each chip's
+    // output 0 to the right speaker and output 1 to the left ("stereo channels are inverted",
+    // mystwarr.cpp; mystwarr(config) is also gaiapols's), which a comparison of this core's chips with
+    // MAME's own audio of Gaiapolis confirms (0.97 correlation with the swap, 0.4-0.66 without)
+    // MAME clips the summed stream; a 16-bit wrap here would turn a loud overlap of the chips into a
+    // full-scale click of the opposite sign
+    function automatic logic [15:0] sat_add(input logic [15:0] a, input logic [15:0] b);
+        logic signed [16:0] s;
+        s = $signed({a[15], a}) + $signed({b[15], b});
+        if (s > 17'sd32767)  return 16'h7fff;
+        if (s < -17'sd32768) return 16'h8000;
+        return s[15:0];
+    endfunction
+    assign snd_l = sat_add(r1, r2);
+    assign snd_r = sat_add(l1, l2);
     /* verilator lint_off UNUSEDSIGNAL */
     wire unused = ^{timer2, sound_ctrl[7:5]};
     /* verilator lint_on UNUSEDSIGNAL */

@@ -70,6 +70,11 @@ localparam CONF_STR = {
 	"O[12],Flip Screen,Off,On;",
 	"O[13],Video timing,Board 59.88Hz,MAME 59.19Hz;",
 	"O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
+	"P1,CRT Adjust;",
+	"P1O[14],CRT Adjust,Off,On;",
+	"H1P1O[19:15],CRT H-Size,0,+1,+2,+3,+4,+5,+6,+7,+8,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"H1P1O[26:20],CRT H-Position,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,-48,-47,-46,-45,-44,-43,-42,-41,-40,-39,-38,-37,-36,-35,-34,-33,-32,-31,-30,-29,-28,-27,-26,-25,-24,-23,-22,-21,-20,-19,-18,-17,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"H1P1O[31:27],CRT V-Shift,0,+1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,-16,-15,-14,-13,-12,-11,-10,-9,-8,-7,-6,-5,-4,-3,-2,-1;",
 	"-;",
 	"O[6],Test Mode,Off,On;",
 	"O[8],Audio,Stereo,Mono;",
@@ -122,7 +127,7 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask({15'd0, direct_video}),
+	.status_menumask({14'd0, ~status[14], direct_video}),
 	.forced_scandoubler(forced_scandoubler),
 	.video_rotated(video_rotated),
 	.direct_video(direct_video),
@@ -417,15 +422,85 @@ flip_buf u_flip
 	.underrun(fb_underrun)
 );
 
+// the finished picture's signals, one clock later, before they meet the CRT Adjust select: the long path from the
+// 68000's registers through the diagnostic overlay's address squares ends in this register instead of behind the select
+reg [23:0] vq_rgb;
+reg        vq_hb, vq_vb, vq_hs, vq_vs, vq_ce;
+always @(posedge clk_sys) begin
+	vq_rgb <= flip_rgb; vq_hb <= hblank_c; vq_vb <= ga_vb; vq_hs <= ga_hs; vq_vs <= ga_vs; vq_ce <= ga_cen_pix;
+end
+
+// CRT Adjust: the size, horizontal position and vertical position of the picture on a 15 kHz analog output
+// (rmonic79's MiSTer-CRT-Adjust, modules/crt-adjust). The picture goes through a line buffer and is read out
+// at a different pixel rate (H-Size) or a different place in the line (H-Position), and the vertical sync is
+// delayed by whole lines (V-Shift); the sync pulses themselves keep their rate, so the monitor stays locked.
+// Off, the picture takes the path it always had. It does nothing while the scandoubler is in use (31 kHz).
+wire crt_sd = (|status[5:3]) | forced_scandoubler;
+// the visible rows of gaia_video (VIS_Y0, VIS_H): the module needs the vertical blank of the *next* line (see below)
+localparam [8:0] VIS_Y0 = 9'd16, VIS_H = 9'd224;
+wire crt_vb_next = ~(dbg_vcount >= VIS_Y0 - 9'd1 && dbg_vcount < VIS_Y0 + VIS_H - 9'd1);
+
+// the OSD values, as the menu counts them: H-Size 0..+8 then -16..-1, H-Position 0..+28 then -48..-1, V-Shift
+// signed 5-bit. The picture is 376 pixels in a line of 508; it starts 104 pixels after the hsync pulse and ends 28
+// before the next, so it cannot grow or move right by more than that (+8 is the most H-Size that fits at all)
+localparam signed [8:0] CRT_HBIAS = -9'sd1;     // cancels the module's own one-pixel delay of the picture
+wire        [4:0] crt_hs_i = status[19:15];
+wire signed [5:0] crt_hsz = (crt_hs_i <= 5'd8) ? $signed({1'b0, crt_hs_i}) : $signed({1'b0, crt_hs_i}) - 6'sd25;
+wire        [6:0] crt_hp = status[26:20];
+wire signed [8:0] crt_hpos = (crt_hp <= 7'd28) ? $signed({2'b00, crt_hp}) : $signed({2'b00, crt_hp}) - 9'sd77;
+// the picture is read a line after it is written, so the sync is delayed one line to keep its place; a positive
+// V-Shift moves the picture down, which is the sync coming earlier. Negative delays count from the frame length
+// the module is built for (264 lines, MAME's); the board's is one line shorter
+wire signed [6:0] crt_vs_t = 7'sd1 - $signed({status[31], status[31], status[31:27]});
+wire signed [6:0] crt_vs_f = (crt_vs_t < 7'sd0 && !status[13]) ? crt_vs_t - 7'sd1 : crt_vs_t;
+reg               crt_on;
+reg signed  [4:0] crt_hsize;
+reg signed  [8:0] crt_hoff;
+reg signed  [5:0] crt_voff;
+always @(posedge clk_sys) if (ga_cen_pix) begin
+	crt_on    <= status[14] & ~crt_sd;
+	crt_hsize <= crt_hsz[4:0];
+	crt_hoff  <= crt_hpos + CRT_HBIAS;
+	crt_voff  <= crt_vs_f[5:0];
+end
+
+// the pixel read enable: one every (48 + H-Size) quarters of a clock (twelve clocks a pixel at 8 MHz), counted
+// from the module's own line reference
+wire       crt_hs_ref;
+reg        crt_hs_ref_d;
+wire [7:0] crt_period = 8'd48 + {{3{crt_hsize[4]}}, crt_hsize};
+reg  [7:0] crt_acc;
+wire       crt_tick = (crt_acc + 8'd4) >= {1'b0, crt_period};
+always @(posedge clk_sys) begin
+	crt_hs_ref_d <= crt_hs_ref;
+	if      (crt_hs_ref & ~crt_hs_ref_d) crt_acc <= 8'd0;
+	else if (crt_tick)                   crt_acc <= crt_acc + 8'd4 - {1'b0, crt_period};
+	else                                 crt_acc <= crt_acc + 8'd4;
+end
+wire crt_rd_en = crt_on ? crt_tick : vq_ce;
+
+wire [7:0] crt_r, crt_g, crt_b;
+wire       crt_hs, crt_vs, crt_hb, crt_vb_unused;
+crt_adjust #(.VTOTAL(264), .HTOTAL(512), .HPOS_MODE(1)) u_crt
+(
+	.clk(clk_sys), .pxl_cen(vq_ce), .pxl2_cen(crt_rd_en), .active(crt_on),
+	.hsize(crt_hsize), .hoffset(crt_hoff), .voffset(crt_voff),
+	.r_in(vq_rgb[23:16]), .g_in(vq_rgb[15:8]), .b_in(vq_rgb[7:0]),
+	.hs_in(vq_hs), .vs_in(vq_vs), .hb_in(vq_hb), .vb_in(crt_vb_next),
+	.r_out(crt_r), .g_out(crt_g), .b_out(crt_b),
+	.hs_out(crt_hs), .vs_out(crt_vs), .hb_out(crt_hb), .vb_out(crt_vb_unused),
+	.hs_ref_out(crt_hs_ref)
+);
+
 arcade_video #(.WIDTH(376), .DW(24), .GAMMA(1)) arcade_video
 (
 	.clk_video(clk_sys),
-	.ce_pix(ga_cen_pix),
-	.RGB_in(flip_rgb),
-	.HBlank(hblank_c),
-	.VBlank(ga_vb),
-	.HSync(ga_hs),
-	.VSync(ga_vs),
+	.ce_pix(crt_on ? crt_rd_en : vq_ce),
+	.RGB_in(crt_on ? {crt_r, crt_g, crt_b} : vq_rgb),
+	.HBlank(crt_on ? (crt_hb | crt_hs) : vq_hb),   // CRT Adjust: nothing of the picture inside the hsync pulse
+	.VBlank(crt_on ? 1'b0 : vq_vb),             // CRT Adjust: the module's blank already includes the vertical one
+	.HSync(crt_on ? crt_hs : vq_hs),
+	.VSync(crt_on ? crt_vs : vq_vs),
 
 	.CLK_VIDEO(CLK_VIDEO),
 	.CE_PIXEL(CE_PIXEL),

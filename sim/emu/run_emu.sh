@@ -3,6 +3,11 @@
 #   sim/emu/run_emu.sh <mister-layout image> <eeprom.nv> [frames after load, default 110] [out prefix] [diag]
 # Environment: PROBE=1 (public signals; needed for the flip check), FLIP=1 (Flip Screen on from the start: the picture
 # the scaler gets must be the overlay's picture turned 180 degrees, one frame late), NOLOAD=1
+# TIMING_MAME=1 / TIMING_TOGGLE=1 (Video timing), and CRT Adjust: CRT=1 turns it on, HSIZE (-16..8), HPOS (-48..28)
+# and VSHIFT (-16..15) set the amounts as the OSD counts them. Every run prints the picture's geometry as the
+# monitor gets it (rows, where they start after the hsync pulse, how wide, the first row's distance from the
+# vsync pulse): with CRT=1 and the amounts at 0 it must equal the run without it, and the scaler picture
+# (out prefix _scaler.ppm) must be byte for byte the same
 # The image is the first 0x1360000 bytes of the Pocket repository's gaiapols.rom (or tools/mra_build.py on a
 # mra/*.mra); the EEPROM default is gaiapols.nv from the romset (128 bytes).
 set -e
@@ -29,7 +34,7 @@ verilator --cc --exe --build -j ${JOBS:-8} -O2 -Wno-fatal -Wno-WIDTH -Wno-DECLFI
     -Wno-IMPLICIT -Wno-TIMESCALEMOD -Wno-CASEINCOMPLETE -Wno-MULTIDRIVEN -Wno-LATCH -Wno-UNSIGNED -Wno-CMPCONST -Wno-PROCASSWIRE \
     +1364-2005ext+v -DMISTER_FB=1 -I. -I../.. ../waivers.vlt ${PROBE:+--public-flat-rw -CFLAGS -DPROBE} \
     --top-module tb_emu_top --prefix Vtb_emu_top -Mdir $OBJ \
-    ../../Gaiapolis.sv ../../rtl/*.sv ../../modules/cpu-tg68k/gen/tg68k.v ../../modules/cpu-tv80/*.v \
+    ../../Gaiapolis.sv ../../rtl/*.sv ../../modules/cpu-tg68k/gen/tg68k.v ../../modules/cpu-tv80/*.v ../../modules/crt-adjust/crt_adjust.sv \
     ../../target/mister/gaia_mem.sv ../../target/mister/rom_cache.sv ../../target/mister/mem_test.sv ../../target/mister/sdram_ctrl.sv ../../target/mister/ddr_arb.sv ../../target/mister/flip_buf.sv \
     $S/arcade_video.v $OBJ/video_mixer_sim.sv $S/scandoubler.v $S/scanlines.v $S/gamma_corr.sv $S/hq2x.sv $S/video_freezer.sv \
     hps_io_stub.sv pll_stub.sv sync_fix.sv ../sdram_model.sv ../ddr_model.sv tb_emu_top.sv tb_emu.cpp \

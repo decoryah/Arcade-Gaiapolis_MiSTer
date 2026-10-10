@@ -4,8 +4,8 @@ Konami's **Gaiapolis** (1993, GX123 "pre-GX" hardware) for the MiSTer FPGA platf
 
 This is a MiSTer platform layer around the Gaiapolis core that **plasticbugs** wrote for the
 Analogue Pocket ([analogue-pocket-gaiapolis](https://github.com/plasticbugs/analogue-pocket-gaiapolis)):
-the whole machine is theirs and is used here (`rtl/`) with one change, the raster timing option
-described under "Video timing" below -- the 68000 and the Z80
+the whole machine is theirs and is used here (`rtl/`) with two changes, the raster timing option
+described under "Video timing" below and the sound-chip fixes under "Sound" -- the 68000 and the Z80
 sound board with its two K054539s, the ER5911 EEPROM, the K054000, and the video chain
 (K056832 tilemaps, K053936 rotating plane, K053247 sprites, K055555 mixer), pixel-exact
 against MAME in their verification. What is new here is everything around it: the memories,
@@ -18,7 +18,8 @@ No ROMs or other copyrighted data are in this repository; you supply your own MA
 
 **Tested on a real MiSTer, and it works**, on a CRT screen and, in direct video, through a RetroTINK 4K.
 Flip Screen (added in `gaiapolis_20261005.rbf`) and the Video timing option (`gaiapolis_20261008.rbf`)
-have been tried on the board too, both timings.
+have been tried on the board too, both timings, and so have CRT Adjust and the sound fixes
+(`gaiapolis_20261010.rbf`).
 
 Known issues:
 
@@ -44,6 +45,10 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   `sim/emu/run_emu.sh` with `PROBE=1 FLIP=1 NOLOAD=1` checks the same on the real top level: the picture
   the scaler gets is exactly the overlay turned 180 degrees, a frame late, and the rotated frame buffer
   still matches it.
+* `sim/emu/run_emu.sh` with CRT Adjust (`CRT=1 HSIZE=.. HPOS=.. VSHIFT=..`): at zero amounts the picture
+  and its geometry (rows, start of each row, width, the first row's distance from the vsync pulse) are those of
+  the unadjusted output, byte for byte, with both timings; each amount moves or stretches the picture by exactly
+  what it says, the picture's 376 x 224 pixels unchanged; Flip Screen and the rotated frame buffer still match.
 * `sim/run_system.sh`: the whole machine from reset with the real ROM set through that memory subsystem, 1,500
   frames. It boots through the self-test (the 68000's wait loop runs 19,287 iterations a frame where MAME's is
   19,314; the PCM checksum through both K054539s from the SDRAM completes at frame ~915 as in MAME's
@@ -54,21 +59,23 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   the final RTL. It has not yet reached the ROZ-heavy scenes, character select and the stages: those
   were checked against the DDR3 latency instead, in `docs/mister-memory.md`.)
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the project for the 5CSEBA6U23I7:
-  45 % of the ALMs, 71 % of the block RAM (529 of 553 blocks, so there is almost none left), 65 DSPs, and
-  timing closes at 96 MHz with every check positive (`gaiapolis_20261008`: setup +0.19 ns, hold +0.24,
-  recovery +1.67, removal +1.56 in the slow 100 C model, `releases/gaiapolis_20261008.sta.summary`;
-  `gaiapolis_20261005`: setup +0.26; the first build, `gaiapolis_20261004`: setup +0.71). A clean
-  rebuild from the committed sources gives a slightly different fit that closes too (setup +0.12 ns
-  when that was tried).
+  47 % of the ALMs, 71 % of the block RAM (532 of 553 blocks, so there is almost none left), 65 DSPs, and
+  timing closes at 96 MHz with every check positive (`gaiapolis_20261010`: setup +0.40 ns, hold +0.25,
+  recovery +1.54, removal +1.65 in the slow 100 C model, `releases/gaiapolis_20261010.sta.summary`;
+  `gaiapolis_20261008`: setup +0.19; `gaiapolis_20261005`: setup +0.26; the first build,
+  `gaiapolis_20261004`: setup +0.71). The fitter seed matters: this build closes with the seed in
+  `Gaiapolis.qsf` (1) and with seed 2; the sound change on its own, without CRT Adjust, missed with seeds
+  1 and 3 (by 0.03 and 0.48 ns) and closed with seed 2.
 
 ## Install
 
-1. Download the newest RBF in `releases/` (`gaiapolis_20261008.rbf`, with Flip Screen and Video timing)
-   and the three `.mra` files from `mra/` (or clone this repository). Put the RBF in
-   `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_` name and date: MiSTer finds the core by the
-   MRA's `<rbf>` name plus the date, and takes the newest if there are several. The earlier builds stay in
-   `releases/` (`gaiapolis_20261004.rbf` is the first, without Flip Screen; `gaiapolis_20261005.rbf` adds
-   Flip Screen and runs MAME's 59.19 Hz timing only).
+1. Download the newest RBF in `releases/` (`gaiapolis_20261010.rbf`, with Flip Screen, Video timing, CRT
+   Adjust and the sound fixes) and the three `.mra` files from `mra/` (or clone this repository). Put the
+   RBF in `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_`
+   name and date: MiSTer finds the core by the MRA's `<rbf>` name plus the date, and takes the newest if
+   there are several. The earlier builds stay in `releases/` (`gaiapolis_20261004.rbf` is the first,
+   without Flip Screen; `gaiapolis_20261005.rbf` adds Flip Screen and runs MAME's 59.19 Hz timing only;
+   `gaiapolis_20261008.rbf` adds the Video timing option).
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
    and USA versions' ROMs are in the merged set, or in `gaiapolsj.zip` / `gaiapolsu.zip` next to it).
    No ROMs are distributed here.
@@ -84,6 +91,7 @@ What was checked before the hardware tests, in simulation and in the Quartus too
 | Flip Screen | Off, On | The picture turned 180 degrees, on every output (analog, direct video, HDMI). Done on the finished picture through a frame buffer in the DDR3, so it adds one frame (16 ms) of delay while it is on and nothing when it is off. See below |
 | Video timing | Board 59.88Hz, MAME 59.19Hz | The raster's size and sync widths. Board (the default) is what the board's K053252 timing chip produces from the values the game programs into it; MAME is MAME's fixed 512 x 264. See "Video timing" below. Takes effect at the next frame |
 | Scandoubler Fx | None, HQ2x, CRT 25%, CRT 50%, CRT 75% | |
+| CRT Adjust | submenu: CRT Adjust Off, On; then CRT H-Size 0..+8 / -16..-1, CRT H-Position -48..+28, CRT V-Shift -16..+15 | Fits the picture to a 15 kHz analog (CRT) output: its width, its place in the line and its place in the frame, without the monitor losing sync. Does nothing while the scandoubler is in use. Off by default. See "CRT Adjust" below |
 | Test Mode | Off, On | The board's test switch: the game's service menu |
 | Audio | Stereo, Mono | The board's mono/stereo input; Mono puts the left mix on both channels |
 | Diagnostic overlay | Off, On | Three rows of 32 squares along the bottom of the picture, and the built-in memory test (a few seconds, black screen) after each ROM load |
@@ -118,6 +126,32 @@ controls are not flipped. Switching it on or off never shows half a frame: the f
 switching on is shown as it is, the second is the first flipped one. It is checked pixel for pixel in
 simulation (`sim/run_flip.sh`, and `sim/emu/run_emu.sh` with `PROBE=1 FLIP=1 NOLOAD=1`).
 
+**CRT Adjust** fits the picture to a CRT. It is [rmonic79's MiSTer-CRT-Adjust](https://github.com/rmonic79/MiSTer-CRT-Adjust)
+(`modules/crt-adjust`), used the way their other cores use it: the picture goes through a line buffer
+and only the picture moves, never the sync pulses' rate, so the monitor keeps its lock while you adjust.
+Switch *CRT Adjust* on and the three amounts appear:
+
+* **CRT H-Size** (0..+8, -16..-1): the width of the picture. Each step is about 2 % (a pixel lasts a quarter of
+  a clock longer or shorter; 12 clocks is the normal pixel); plus is wider, minus is narrower.
+* **CRT H-Position** (-48..+28): the picture's place in the line, in pixels. Plus is right.
+* **CRT V-Shift** (-16..+15): the picture's place in the frame, in lines (the vertical sync is moved the other
+  way). Plus is down.
+
+Things to know:
+
+* It is for the 15 kHz analog output (and direct video). With *Scandoubler Fx* on, or the framework's
+  `forced_scandoubler` (31 kHz VGA), there is nothing to adjust and the options do nothing.
+* The picture is 376 pixels in a line of 508 (512 with MAME timing): it starts 104 pixels after the hsync
+  pulse and ends 28 before the next one. So it cannot go further right than +28 pixels, and making it wider
+  uses that room up: without moving it, +2 is the most that fits; moved to -48, +8 is. Past that the right
+  edge is cut off. (Moving the picture left costs nothing until it reaches the end of the hsync pulse.)
+* Nothing of the picture is shown during the hsync pulse, so a setting that would push part of it there
+  loses that part rather than breaking the line.
+* Switching it off puts the picture back on the path it always had. The picture itself is not changed in
+  either case, only where and how wide it is drawn: with the options at 0 the picture, its size and its place
+  in the line and the frame are exactly those of the unadjusted output.
+* The OSD menu is placed from the start of the picture, so expect it to move with the picture.
+* Tried on a CRT: it works.
 **Video timing.** MAME runs this game on a fixed 512 x 264 raster (15.625 kHz, 59.1856 Hz) that ignores
 the values the game writes into the K053252 timing chip. The board's chip produces something slightly
 different, and the default here follows it:
@@ -137,6 +171,30 @@ The option is read at the start of each frame, so it can be switched while playi
 that cannot be checked without the real board is the exact phase of the vertical interrupt inside the
 chip's 386 x 225 active window; it stays at the end of the visible picture, as in MAME.
 
+**Sound.** The two K054539 PCM chips were compared with MAME's: a 130-second attract-mode run of `gaiapols`
+in MAME 0.289, with every Z80 write to both chips logged, replayed through this core's chips and compared
+with MAME's own audio second by second. The Pocket core's chip had a median correlation of 0.915 (31 of
+the 68 sounding seconds below 0.9). Four differences from MAME's chip, fixed in `rtl/k054539.sv`, bring it
+to 0.964 (one second below 0.9), and the fixed chip agrees with a line-by-line transcription of MAME's
+`k054539.cpp`:
+
+* a 16-bit PCM sample steps two bytes at a time and is read from whatever address the channel has, aligned
+  or not (the core forced an even address, which an odd start address, common in this game's music, broke);
+* MAME's `UPDATE_AT_KEYON`: while register 0x22f bit 0 is set, writes to a channel's position registers
+  (0x0c-0x0e) are held and only copied in by that channel's key-on, so a note programmed while the last one
+  still sounds no longer restarts it at once (a burst of noise); key-on and key-off are gated by bit 7;
+* the reverb ring's index adds the position twice, as MAME does;
+* in `rtl/gaia_sound.sv`, the sum of the two chips saturates instead of wrapping, as MAME's mixer clips.
+
+**The left and right channels changed side.** MAME routes each chip's output 0 to the right speaker and
+output 1 to the left (`mystwarr.cpp`'s "stereo channels are inverted", which `gaiapols` uses too), and the
+comparison confirms it (0.97 correlation with the swap, 0.4-0.66 without). The core used the other
+order in every build before `gaiapolis_20261010`, so a panned sound now comes out of the opposite speaker. Audio *Mono*
+still puts the left mix on both channels.
+
+The whole-machine bench is silent for its first 110 frames, so these fixes were checked against MAME's
+audio at the chip level, not in the full machine's simulation, and then on the board.
+
 ## Differences from the Pocket core
 
 The core's ports are the same; what sits behind them is not, because MiSTer has no PSRAM or
@@ -155,8 +213,8 @@ objects on one pixel; and the attract intro running longer than MAME's before th
 |---|---|
 | `Gaiapolis.sv`, `Gaiapolis.q*`, `Gaiapolis.sdc`, `files.qip` | the MiSTer top level (`emu`), Quartus project, timing constraints |
 | `target/mister/` | the memory subsystem (`gaia_mem`, `rom_cache`, `ddr_arb`), SDRAM controller, memory test |
-| `rtl/` | the Gaiapolis machine, the Pocket core's apart from the raster timing option in `gaia_video.sv` and `gaia_core.sv` (`rtl/data/` generated tables, `rtl/pll*` the clock PLL) |
-| `modules/` | vendored TG68K.C and tv80 |
+| `rtl/` | the Gaiapolis machine, the Pocket core's apart from the raster timing option in `gaia_video.sv` and `gaia_core.sv` and the sound fixes in `k054539.sv` and `gaia_sound.sv` (`rtl/data/` generated tables, `rtl/pll*` the clock PLL) |
+| `modules/` | vendored TG68K.C, tv80 and CRT Adjust (`modules/VENDOR.md`) |
 | `sys/` | the MiSTer framework (identical to Template_MiSTer) |
 | `mra/` | the three MRAs, generated by `tools/make_mra.py` |
 | `releases/` | the tested RBF, with its timing and fitter summaries |
@@ -199,6 +257,11 @@ at about a quarter of a MHz, so a thousand frames takes hours.
   repository owner: the memory subsystem, video, audio and controls, the MRAs, the simulation benches
   and this documentation. The hardware testing is the owner's.
 * **Sorgelig** and the MiSTer team -- the framework (`sys/`, GPL).
+* The K054539 and mixer fixes were worked out and checked against MAME in another core of the repository
+  owner's that uses the same chip, and brought over here.
+* **rmonic79** (Umberto Parisi), with help from **Andrea Bogazzi** (asturur) --
+  [MiSTer-CRT-Adjust](https://github.com/rmonic79/MiSTer-CRT-Adjust), the module behind the CRT Adjust options
+  (`modules/crt-adjust/crt_adjust.sv`, with a one-line sign fix noted in `modules/VENDOR.md`; GPL-3.0 or later).
 * **furrtek** -- [SiliconRE](https://github.com/furrtek/SiliconRE/tree/master/Konami/053252)'s silicon-traced
   model of the K053252 timing chip, and **Franck78** -- the
   [Konami Gaiapolis schematic](https://github.com/Franck78/The-Konami-Gaiapolis-schematic) of the board
@@ -209,6 +272,6 @@ at about a quarter of a MHz, so a thousand frames takes hours.
 
 ## Licence
 
-GPL-3.0, as the Pocket core this is built on (see `LICENSE`). The vendored TG68K.C (LGPL-3.0) and
+GPL-3.0, as the Pocket core this is built on (see `LICENSE`). The vendored TG68K.C (LGPL-3.0), CRT Adjust (GPL-3.0 or later) and
 tv80 (MIT) in `modules/` keep their own licences (`modules/VENDOR.md`), and the MiSTer framework in `sys/`
 is GPL (see the headers of its files).
