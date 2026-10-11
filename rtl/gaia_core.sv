@@ -90,6 +90,7 @@ module gaia_core #(
     output logic        hsync,
     output logic        vsync,
     output logic        de,
+    output logic        hde,            // horizontal window only (for a scandoubler: its blank must toggle on every line)
     output logic        vblank,
 
     // audio: a stereo sample on every snd_valid (48 kHz, clk/2000)
@@ -136,7 +137,7 @@ module gaia_core #(
         .line_start(line_start), .render_line(render_line), .prestart(prestart),
         .renderers_busy(renderers_busy), .overrun(dbg_overrun), .overrun_src(dbg_overrun_src),
         .px(px), .px_valid(px_valid), .hcount(hcount), .vcount(vcount),
-        .hsync(hsync), .vsync(vsync), .de(de), .vblank(vblank), .vblank_rise(vblank_rise)
+        .hsync(hsync), .vsync(vsync), .de(de), .hde(hde), .vblank(vblank), .vblank_rise(vblank_rise)
     );
     assign dbg_vcount = vcount;
 

@@ -55,8 +55,10 @@ module hps_io #(parameter CONF_STR = "", parameter int WIDE = 0, parameter int P
     assign gamma_bus[20:0] = {clk_sys, 20'd0};
     assign buttons = 2'b00;
     assign status = r_status;
-    assign forced_scandoubler = 1'b0;
-    assign direct_video = 1'b0;
+    reg r_fsd /*verilator public_flat_rw*/ = 1'b0;        // the framework's forced scandoubler (MiSTer.ini)
+    reg r_direct /*verilator public_flat_rw*/ = 1'b0;     // direct_video
+    assign forced_scandoubler = r_fsd;
+    assign direct_video = r_direct;
     assign ioctl_download = r_download;
     assign ioctl_index = r_index;
     assign ioctl_wr = r_wr;

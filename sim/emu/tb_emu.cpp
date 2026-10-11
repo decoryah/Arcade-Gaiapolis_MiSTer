@@ -78,6 +78,7 @@ static void probe() {
 // the geometry of the analog picture as the monitor gets it: lines from the vsync pulse to the first row with picture,
 // the number of rows, and where each row starts and how wide it is, in clocks from the hsync pulse before it
 static bool g_prev_hs = false, g_prev_de = false;
+static unsigned long long st_vs = 0, st_hs = 0, st_de = 0, st_ce = 0;
 static unsigned long long g_hs_clk = 0, g_de_clk = 0;
 static int g_line = 0, g_rows = 0, g_lines_frame = 0; static long g_first = -1; static unsigned long long g_vs_clk = 0;
 static long g_smin = 1 << 30, g_smax = -1, g_wmin = 1 << 30, g_wmax = -1;
@@ -90,6 +91,10 @@ static void video_watch() {
     if (audio_nonzero == 0 && (dut->AUDIO_L != 0 || dut->AUDIO_R != 0)) audio_nonzero = 1;
     {   // geometry at clock level (VGA_HS, VGA_DE, and the frame's end at VGA_VS)
         bool hs = dut->VGA_HS, de = dut->VGA_DE;
+        if (hs && !g_prev_hs) st_hs++;
+        if (de && !g_prev_de) st_de++;
+        if (dut->VGA_VS && !prev_vs) st_vs++;
+        if (dut->CE_PIXEL) st_ce++;
         if (hs && !g_prev_hs) { g_line++; g_lines_frame++; g_hs_clk = cycles; }
         if (de && !g_prev_de) {
             long s = (long)(cycles - g_hs_clk); g_de_clk = cycles; g_rows++;
@@ -171,6 +176,12 @@ int main(int argc, char **argv) {
         if (getenv("HPOS")) { int v = atoi(getenv("HPOS")); field(20, 7, v >= 0 ? v : 77 + v); }
         if (getenv("VSHIFT")) field(27, 5, atoi(getenv("VSHIFT")) & 31);
     }
+    {   // the framework's settings the OSD does not hold: forced_scandoubler (MiSTer.ini), direct_video, and Orientation Horz
+        if (getenv("FSD") && atoi(getenv("FSD"))) HPSV(r_fsd) = 1;
+        if (getenv("DIRECT") && atoi(getenv("DIRECT"))) HPSV(r_direct) = 1;
+        if (getenv("HORZ") && atoi(getenv("HORZ"))) set_status(2, 1);
+        if (getenv("FX")) { int v = atoi(getenv("FX")); for (int i = 0; i < 3; i++) set_status(3 + i, (v >> i) & 1); }   // Scandoubler Fx
+    }
     run(40000);                                  // SDRAM init, cache sweeps
     if (noload) {                                // a quick check of the video path: no ROM, the overlay is the test pattern
         printf("up after %llu clocks; no image download (video-path check)\n", cycles);
@@ -194,12 +205,16 @@ int main(int argc, char **argv) {
     bool toggle = getenv("TIMING_TOGGLE") && atoi(getenv("TIMING_TOGGLE")), tnow = tmame;
     int tg = 0; long long twait = -1;
     record_periods = true;
-    while (frames_done < target && guard++ < 4000000000ull) {
+    while (frames_done < target && guard++ < (getenv("MAXTICKS") ? strtoull(getenv("MAXTICKS"), 0, 10) : 4000000000ull)) {
         tick(); video_watch();
         if (toggle && tg < 3) {
             if (twait < 0 && frames_done - start_frames == 3 + 3 * tg) twait = 700000;
             else if (twait > 0 && --twait == 0) { twait = -1; tnow = !tnow; set_status(13, tnow); tg++; printf("  frame %d: Video timing -> %s\n", frames_done - start_frames, tnow ? "MAME" : "board"); }
         }
+    }
+    if (frames_done < target) {   // the run was cut short: what did the video output do?
+        printf("  STALL: %d of %d frames after %llu clocks; VGA_VS edges %llu, VGA_HS edges %llu, DE rises %llu, CE_PIXEL pulses %llu\n",
+               frames_done - start_frames, frames, guard, st_vs, st_hs, st_de, st_ce);
     }
     printf("%d frames after the load, last frame had %d visible pixels (expect %d)\n", frames_done - start_frames, de_last_count, VIS_W * VIS_H);
     if (de_last_count != VIS_W * VIS_H) { printf("  FAIL: visible pixel count\n"); errors++; }

@@ -67,6 +67,7 @@ module gaia_video #(
     output logic        hsync,
     output logic        vsync,
     output logic        de,
+    output logic        hde,            // the same without the vertical window: the horizontal blank alone, on every line
     output logic        vblank,
     output logic        vblank_rise     // one clk pulse at the start of vblank
 );
@@ -74,7 +75,7 @@ module gaia_video #(
     assign in_active_x = (hcount >= 9'(VIS_X0)) && (hcount < 9'(VIS_X0 + VIS_W));
     assign in_active_y = (vcount >= 9'(VIS_Y0)) && (vcount < 9'(VIS_Y0 + VIS_H));
 
-    logic hs_r, vs_r, de_r, vb_r;
+    logic hs_r, vs_r, de_r, vb_r, hde_r;
     logic vb_prev;
 
     // the totals in force for this frame
@@ -93,7 +94,7 @@ module gaia_video #(
         if (reset) begin
             mame_l <= timing_mame;
             hcount <= '0; vcount <= '0; overrun <= 1'b0; overrun_src <= '0;
-            hsync <= 1'b0; vsync <= 1'b0; de <= 1'b0; vblank <= 1'b1; vb_prev <= 1'b1;
+            hsync <= 1'b0; vsync <= 1'b0; de <= 1'b0; hde <= 1'b0; vblank <= 1'b1; vb_prev <= 1'b1;
             px <= '0; px_valid <= 1'b0; render_line <= '0;
         end else if (cen_pix) begin
             // raster counters
@@ -124,10 +125,11 @@ module gaia_video #(
 
             // timing outputs, delayed one pixel to line up with rgb
             de_r <= in_active_x && in_active_y;
+            hde_r <= in_active_x;
             hs_r <= (hcount >= hs_start) && (hcount < hs_end);
             vs_r <= (vcount >= vs_start) && (vcount < vs_end);
             vb_r <= !in_active_y;
-            de <= de_r; hsync <= hs_r; vsync <= vs_r; vblank <= vb_r;
+            de <= de_r; hde <= hde_r; hsync <= hs_r; vsync <= vs_r; vblank <= vb_r;
 
             vb_prev <= vb_r;
             if (vb_r && !vb_prev) vblank_rise <= 1'b1;

@@ -19,7 +19,8 @@ No ROMs or other copyrighted data are in this repository; you supply your own MA
 **Tested on a real MiSTer, and it works**, on a CRT screen and, in direct video, through a RetroTINK 4K.
 Flip Screen (added in `gaiapolis_20261005.rbf`) and the Video timing option (`gaiapolis_20261008.rbf`)
 have been tried on the board too, both timings, and so have CRT Adjust and the sound fixes
-(`gaiapolis_20261010.rbf`).
+(`gaiapolis_20261010.rbf`). The Scandoubler Fx / forced scandoubler fix (`gaiapolis_20261011.rbf`) was
+tried on the setup of the user who reported the problem, and it fixed it.
 
 Known issues:
 
@@ -49,6 +50,11 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   and its geometry (rows, start of each row, width, the first row's distance from the vsync pulse) are those of
   the unadjusted output, byte for byte, with both timings; each amount moves or stretches the picture by exactly
   what it says, the picture's 376 x 224 pixels unchanged; Flip Screen and the rotated frame buffer still match.
+* `sim/emu/run_sd.sh`: the real raster (`gaia_video.sv`, one pixel in twelve clocks) into the framework's
+  `arcade_video`, which is where the scandoubler lives, with *Scandoubler Fx* or the forced scandoubler on.
+  Per frame it checks the vertical sync, the lines (448 picture rows of 376 pixels, 526 lines at 31.5 kHz),
+  the frame period, and that each source line comes out twice, in order. Before the `hde` fix it showed no
+  vertical sync at all; the 15 kHz run is the same as before (263 lines, 224 rows).
 * `sim/run_system.sh`: the whole machine from reset with the real ROM set through that memory subsystem, 1,500
   frames. It boots through the self-test (the 68000's wait loop runs 19,287 iterations a frame where MAME's is
   19,314; the PCM checksum through both K054539s from the SDRAM completes at frame ~915 as in MAME's
@@ -60,22 +66,25 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   were checked against the DDR3 latency instead, in `docs/mister-memory.md`.)
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the project for the 5CSEBA6U23I7:
   47 % of the ALMs, 71 % of the block RAM (532 of 553 blocks, so there is almost none left), 65 DSPs, and
-  timing closes at 96 MHz with every check positive (`gaiapolis_20261010`: setup +0.40 ns, hold +0.25,
-  recovery +1.54, removal +1.65 in the slow 100 C model, `releases/gaiapolis_20261010.sta.summary`;
-  `gaiapolis_20261008`: setup +0.19; `gaiapolis_20261005`: setup +0.26; the first build,
-  `gaiapolis_20261004`: setup +0.71). The fitter seed matters: this build closes with the seed in
-  `Gaiapolis.qsf` (1) and with seed 2; the sound change on its own, without CRT Adjust, missed with seeds
-  1 and 3 (by 0.03 and 0.48 ns) and closed with seed 2.
+  timing closes at 96 MHz with every check positive (`gaiapolis_20261011`: setup +0.36 ns, hold +0.16,
+  recovery +1.59, removal +1.74 in the slow 100 C model, `releases/gaiapolis_20261011.sta.summary`;
+  `gaiapolis_20261010`: setup +0.40; `gaiapolis_20261008`: setup +0.19; `gaiapolis_20261005`: setup +0.26;
+  the first build, `gaiapolis_20261004`: setup +0.71). The fitter seed matters: `gaiapolis_20261011` closes
+  with the seed in `Gaiapolis.qsf` (1) and missed with seed 2 (by 0.24 ns), `gaiapolis_20261010` closed
+  with seeds 1 and 2, and the sound change on its own, without CRT Adjust, missed with seeds 1 and 3 (by 0.03
+  and 0.48 ns) and closed with seed 2.
 
 ## Install
 
-1. Download the newest RBF in `releases/` (`gaiapolis_20261010.rbf`, with Flip Screen, Video timing, CRT
-   Adjust and the sound fixes) and the three `.mra` files from `mra/` (or clone this repository). Put the
+1. Download the newest RBF in `releases/` (`gaiapolis_20261011.rbf`, with Flip Screen, Video timing, CRT
+   Adjust, the sound fixes and the scandoubler fix) and the three `.mra` files from `mra/` (or clone this repository). Put the
    RBF in `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_`
    name and date: MiSTer finds the core by the MRA's `<rbf>` name plus the date, and takes the newest if
    there are several. The earlier builds stay in `releases/` (`gaiapolis_20261004.rbf` is the first,
    without Flip Screen; `gaiapolis_20261005.rbf` adds Flip Screen and runs MAME's 59.19 Hz timing only;
-   `gaiapolis_20261008.rbf` adds the Video timing option).
+   `gaiapolis_20261008.rbf` adds the Video timing option; `gaiapolis_20261010.rbf` adds CRT Adjust and the
+   sound fixes; none of the four has a vertical sync with the scandoubler on, which `gaiapolis_20261011.rbf`
+   fixes).
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
    and USA versions' ROMs are in the merged set, or in `gaiapolsj.zip` / `gaiapolsu.zip` next to it).
    No ROMs are distributed here.
@@ -116,6 +125,15 @@ the default mapping is A / B / R for buttons 1 / 2 / 3, Start for Start and Sele
 in MiSTer's usual way). From the keyboard: 1 / 2 start, 5 / 6 coin and F2 for the test switch, on top
 of MiSTer's usual keyboard-as-joystick. The game's own settings and high scores live in its EEPROM,
 which MiSTer saves and restores.
+
+Scandoubler Fx and MiSTer.ini's `forced_scandoubler` make the core's 15 kHz picture a 31 kHz one (every line
+twice; HQ2x and the CRT filters on top). In every build up to and including `gaiapolis_20261010` they gave no
+vertical sync at all: the monitor, or the HDMI scaler, saw a stream without frames and showed a frozen picture (reported on a
+1080p vertical monitor: sound, a frozen picture, and 31.5 kHz in MiSTer's video info). Fixed in `gaiapolis_20261011`: the framework's
+scandoubler takes its line timing from the horizontal blank's edges and needs them on every line, vertical
+blanking included, and this core's blank was the picture window, high through the whole vertical blank. The core
+now gives it the horizontal blank alone (`hde` from `gaia_video.sv`) with the vertical blank separate. With
+the 15 kHz output, the picture, and its timing, are as they were.
 
 **Flip Screen** is not the game's own flip setting. That setting only asks the video chips to flip, and
 the Pocket core's renderers do not implement a global flip (it is on the list of unsupported modes in
@@ -213,7 +231,7 @@ objects on one pixel; and the attract intro running longer than MAME's before th
 |---|---|
 | `Gaiapolis.sv`, `Gaiapolis.q*`, `Gaiapolis.sdc`, `files.qip` | the MiSTer top level (`emu`), Quartus project, timing constraints |
 | `target/mister/` | the memory subsystem (`gaia_mem`, `rom_cache`, `ddr_arb`), SDRAM controller, memory test |
-| `rtl/` | the Gaiapolis machine, the Pocket core's apart from the raster timing option in `gaia_video.sv` and `gaia_core.sv` and the sound fixes in `k054539.sv` and `gaia_sound.sv` (`rtl/data/` generated tables, `rtl/pll*` the clock PLL) |
+| `rtl/` | the Gaiapolis machine, the Pocket core's apart from the raster timing option and the `hde` output (the horizontal blank alone) in `gaia_video.sv` and `gaia_core.sv`, and the sound fixes in `k054539.sv` and `gaia_sound.sv` (`rtl/data/` generated tables, `rtl/pll*` the clock PLL) |
 | `modules/` | vendored TG68K.C, tv80 and CRT Adjust (`modules/VENDOR.md`) |
 | `sys/` | the MiSTer framework (identical to Template_MiSTer) |
 | `mra/` | the three MRAs, generated by `tools/make_mra.py` |

@@ -210,6 +210,31 @@ after the vsync pulse, which is lower on a monitor. The horizontal and vertical 
 (376 pixels of 8 to 14 clocks) and the limits above were each measured on the real top level, with the
 picture's pixel count and content unchanged.
 
+## The scandoubler needs the horizontal blank alone
+
+`sys/scandoubler.v` (Scandoubler Fx, MiSTer.ini's `forced_scandoubler`) takes its line timing from the edges of
+`HBlank`: `hb` falling starts a line (`hcnt`, `sd_hcnt`, `hde_start` and the sampling of `vb_in` hang on it),
+and it shifts `vs_in` / `vb_in` through at those edges. It therefore expects `HBlank` to toggle on every line of
+the frame, the vertical blank lines included, with `VBlank` separate. This core gave it `~de`, where `de` is
+the visible *rectangle* (`in_active_x && in_active_y`): `HBlank` stayed high through the whole vertical blank,
+the scandoubler's line counters, reset only on that falling edge, ran on through the blank lines, and its
+doubled output had no hsync in them, no vsync and no vertical blank (measured by probing the mixer in
+`sim/emu/run_sd.sh`: `vs_sd` and `vb_sd` constant 0, `hs_sd` pulsing only in the 448 picture lines of a frame). The 15 kHz path is unaffected, as
+`arcade_video` without the scandoubler only uses the combined blank for `VGA_DE`. A user on a 1080p TATE
+monitor reported sound and a frozen picture, with a "31.51 kHz" video info (the doubled lines), which is what
+this produces.
+
+`gaia_video.sv` now also outputs `hde` (the horizontal window, through the same pipeline as `de`), through
+`gaia_core.sv`; `Gaiapolis.sv` gives `arcade_video` `HBlank = ~hde` and `VBlank = vblank` (registered with the
+rest in `vq_*`). `VGA_DE` comes out the same rows as before (the video mixer ANDs the two) and the 15 kHz
+output is unchanged (same geometry, byte-identical scaler picture in the whole-machine bench). The CRT Adjust
+module and Flip Screen keep the combined blank (`hblank_c`), which is what they want; CRT Adjust is gated off
+while the scandoubler is in use.
+
+Measured with the scandoubler on (forced, or CRT 25 %): 526 lines (528 with MAME's timing), 448 picture rows of
+376 pixels, line period 3,048 clocks (3,072), frame period exact, each source line twice in order; HQ2x 752
+pixels a line. The whole top level with the forced scandoubler gives 448 rows and a vertical sync.
+
 ## Sound
 
 The Pocket core's K054539 (`rtl/k054539.sv`) and its two-chip mix (`rtl/gaia_sound.sv`) were checked against
@@ -278,7 +303,9 @@ buffer as before).
   nearly all of the blocks (the first build used 525; Flip Screen's line buffers and the deeper
   write FIFO took four; CRT Adjust's line buffer three more), so a core change that adds memory will need the caches or the
   line buffers looked at -- and 65 of 112 DSPs. Timing closes at 96 MHz in the slow 100 C
-  model with every check positive: `gaiapolis_20261010` (CRT Adjust and the sound fixes) setup +0.40 ns,
+  model with every check positive: `gaiapolis_20261011` (the scandoubler fix) setup +0.36 ns, hold +0.16,
+  recovery +1.59, removal +1.74 (`releases/gaiapolis_20261011.sta.summary`, seed 1; seed 2 missed, -0.24);
+  `gaiapolis_20261010` (CRT Adjust and the sound fixes) setup +0.40 ns,
   hold +0.25, recovery +1.54, removal +1.65 (`releases/gaiapolis_20261010.sta.summary`, seed 1; seed 2 +0.39);
   `gaiapolis_20261008` (Video timing option) setup +0.19 ns,
   hold +0.24, recovery +1.67, removal +1.56 (`releases/gaiapolis_20261008.sta.summary`);
