@@ -21,8 +21,8 @@ Flip Screen (added in `gaiapolis_20261005.rbf`) and the Video timing option (`ga
 have been tried on the board too, both timings, and so have CRT Adjust and the sound fixes
 (`gaiapolis_20261010.rbf`). The Scandoubler Fx / forced scandoubler fix (`gaiapolis_20261011.rbf`) was
 tried on the setup of the user who reported the problem, and it fixed it. Fast loading and the Scale option
-(`gaiapolis_20261014.rbf`) are checked in simulation (see "Fast loading" and "Scale" below); they have not been
-tried on a board yet.
+(`gaiapolis_20261014.rbf`) have been run on the board by the repository owner and work (what they do, and what was
+checked in simulation, is under "Fast loading" and "Scale" below).
 
 Known issues:
 
