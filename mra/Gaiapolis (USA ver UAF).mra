@@ -26,7 +26,7 @@
       Expects the MAME 0.289 merged romset (gaiapols.zip holding the parent and the
       two clones) or the split sets: parts are found by name, whatever folder holds them.
     -->
-    <rom index="0" zip="gaiapolsu.zip|gaiapols.zip" md5="None">
+    <rom index="0" zip="gaiapolsu.zip|gaiapols.zip" md5="None" address="0x32000000">
 
         <!-- 68000 program, 16-bit big-endian words: the even byte is the first ROM -->
         <interleave output="16">

@@ -16,7 +16,8 @@ module tb_emu_top #(
     output logic [15:0] AUDIO_L, AUDIO_R,
     output logic        FB_EN,
     output logic [11:0] FB_WIDTH, FB_HEIGHT,
-    output logic [12:0] VIDEO_ARX, VIDEO_ARY
+    output logic [12:0] VIDEO_ARX, VIDEO_ARY,
+    input  logic [11:0] HDMI_WIDTH, HDMI_HEIGHT     // the scaler's output size the core's Scale option works against
 );
     wire  [45:0] HPS_BUS;
     wire         VGA_F1, VGA_SCALER, VGA_DISABLE, HDMI_FREEZE, HDMI_BLACKOUT, HDMI_BOB_DEINT;
@@ -33,7 +34,6 @@ module tb_emu_top #(
     wire  [12:0] SDRAM_A; wire [1:0] SDRAM_BA; wire [15:0] SDRAM_DQ;
     wire         UART_RTS, UART_TXD, UART_DTR;
     wire   [6:0] USER_OUT;
-    wire  [11:0] HDMI_WIDTH = 12'd1920, HDMI_HEIGHT = 12'd1080;
     wire         FB_VBL = 1'b0, FB_LL = 1'b0;
     wire         CLK_AUDIO = 1'b0, SD_MISO = 1'b0, SD_CD = 1'b0, UART_CTS = 1'b0, UART_RXD = 1'b0, UART_DSR = 1'b0, OSD_STATUS = 1'b0;
     wire   [6:0] USER_IN = 7'h7f;
@@ -44,7 +44,7 @@ module tb_emu_top #(
         .clk(CLK_50M), .dq(SDRAM_DQ), .a(SDRAM_A), .ba(SDRAM_BA), .dqml(SDRAM_DQML), .dqmh(SDRAM_DQMH),
         .cs_n(SDRAM_nCS), .ras_n(SDRAM_nRAS), .cas_n(SDRAM_nCAS), .we_n(SDRAM_nWE), .cke(SDRAM_CKE)
     );
-    ddr_model #(.AW(20), .LAT(DDR_LAT), .BUSY_PCT(DDR_BUSY_PCT), .FB_STORE(1)) ddr (
+    ddr_model #(.AW(23), .LAT(DDR_LAT), .BUSY_PCT(DDR_BUSY_PCT), .FB_STORE(1)) ddr (
         .clk(DDRAM_CLK), .DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
         .DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY),
         .DDRAM_RD(DDRAM_RD), .DDRAM_DIN(DDRAM_DIN), .DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE)

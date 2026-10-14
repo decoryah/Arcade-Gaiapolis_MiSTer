@@ -287,6 +287,95 @@ int main(int argc, char **argv) {
     dut->rootp->tb_mem_top__DOT__chip__DOT__mem[SD_TILE + 7] ^= 0x0001;      // tile word 7
     dut->rootp->tb_mem_top__DOT__ddr__DOT__mem[DD_MAP + 3] ^= 0x0000000000010000ULL;   // map word 1 of beat 3
     run_test("corrupted prog+tile+map", 0x7f & ~0x01 & ~0x04 & ~0x10);         // bits 0 prog, 2 tile, 4 map
+
+    // fast load (the MRA's address= attribute): Main_MiSTer has put the whole image into the DDR3 at byte 0x32000000
+    // (beat 0x400000 of the client's window), and the loader reads it back. The ROZ regions of the DDR3 are poisoned
+    // first, so a word the loader failed to write cannot pass; every word of the image is then compared with where
+    // the ports read it, the memory test's sums of the image with the image's, and a download started part-way
+    // (the replay aborted, the caches swept again, the replay restarted) must come out the same
+    {
+        delete dut; dut = new Vtb_mem_top; dut->rot_en = 1; reset_dut();
+        auto &dm = dut->rootp->tb_mem_top__DOT__ddr__DOT__mem;
+        auto &sd = dut->rootp->tb_mem_top__DOT__chip__DOT__mem;
+        const size_t FLB = 0x400000;
+        for (size_t i = 0; i < (size_t)IMG_END / 8; i++) {
+            unsigned long long v = 0; for (int b = 7; b >= 0; b--) v = (v << 8) | img[i * 8 + b];
+            dm[FLB + i] = v;
+        }
+        auto replay = [&](long abort_after) -> long {
+            for (size_t i = 0; i < 0x50000; i++) dm[i] = 0xA5A5A5A5A5A5A5A5ULL;           // the ROZ memories' beats
+            dut->dl_start = 1; tick(); dut->dl_start = 0; tick(4);
+            dut->fl_len = IMG_END; dut->fl_go = 1; tick(); dut->fl_go = 0;
+            long n = 0;
+            while (n++ < 400000000) {
+                tick();
+                if (abort_after && n == abort_after) {                                      // a new download starts part-way
+                    dut->dl_start = 1; tick(); dut->dl_start = 0; tick(4);
+                    dut->fl_len = IMG_END; dut->fl_go = 1; tick(); dut->fl_go = 0;
+                    abort_after = 0;
+                }
+                if (dut->fl_done) return n;
+            }
+            return -1;
+        };
+        auto verify = [&](const char *what) {
+            tick(4000);
+            unsigned long long words = 0, bad = 0;
+            auto chk_sd = [&](size_t a, unsigned v) { words++; if (sd[a] != v) { if (bad < 6) printf("  SDRAM word %06zx: %04x, expected %04x\n", a, (unsigned)sd[a], v); bad++; } };
+            auto chk_dd = [&](size_t beat, unsigned lane, unsigned v) {
+                words++; unsigned g = (unsigned)((dm[beat] >> (16 * lane)) & 0xffff);
+                if (g != v) { if (bad < 6) printf("  DDR3 beat %06zx lane %u: %04x, expected %04x\n", beat, lane, g, v); bad++; }
+            };
+            for (size_t wa = 0; wa < (size_t)IMG_END / 2; wa++) {
+                unsigned v = ((unsigned)img[wa * 2] << 8) | img[wa * 2 + 1];
+                size_t b = wa * 2;
+                if (b < (size_t)IMG_SND)       chk_sd(SD_PROG + wa, v);
+                else if (b < (size_t)IMG_TILE) chk_sd(SD_SND + (wa - IMG_SND / 2), v);
+                else if (b < (size_t)IMG_CHR)  chk_sd(SD_TILE + (wa - IMG_TILE / 2), v);
+                else if (b < (size_t)IMG_MAP) {
+                    unsigned wchr = (unsigned)(wa - IMG_CHR / 2);
+                    unsigned c = ((wchr >> 6) << 6) | ((wchr & 3) << 4) | ((wchr >> 2) & 15);   // {wchr[19:6], wchr[1:0], wchr[5:2]}
+                    chk_dd(DD_CHR + (c >> 2), c & 3, v);
+                } else if (b < (size_t)IMG_PCM) {
+                    unsigned wmap = (unsigned)(wa - IMG_MAP / 2);
+                    chk_dd(DD_MAP + (wmap >> 2), wmap & 3, v);
+                } else if (b < (size_t)IMG_SPR) chk_sd(SD_PCM + (wa - IMG_PCM / 2), v);
+                else                            chk_sd(SD_SPR + (wa - IMG_SPR / 2), v);
+            }
+            const long rb[8] = {IMG_PROG, IMG_SND, IMG_TILE, IMG_CHR, IMG_MAP, IMG_PCM, IMG_SPR, IMG_END};
+            auto &ls = dut->rootp->tb_mem_top__DOT__dut__DOT__u_test__DOT__lsum;
+            int badr = 0;
+            for (int r = 0; r < 7; r++) {
+                unsigned s = 0; for (long a = rb[r]; a < rb[r + 1]; a++) s += img[a];
+                if ((unsigned)ls[r] != (s & 0xffffff)) { badr++; printf("  memory-test sum of region %d: %06x, the image's %06x\n", r, (unsigned)ls[r], s & 0xffffff); }
+            }
+            // and through the ports, on a few windows of each region
+            unsigned pbad = 0;
+            unsigned seed = 99;
+            auto rnd = [&]() { seed = seed * 1103515245u + 12345u; return seed >> 8; };
+            for (int i = 0; i < 400; i++) {
+                long o = (rnd() % ((IMG_SND - IMG_PROG) / 2)) * 2;
+                if (prog_rd(o / 2) != be16(IMG_PROG + o)) pbad++;
+                long m = (rnd() % ((IMG_PCM - IMG_MAP) / 2)) * 2;
+                if (map_rd(m) != be16(IMG_MAP + m)) pbad++;
+                long s = rnd() % ((IMG_END - IMG_SPR) / 8);
+                if (spr_rd(s) != be64(IMG_SPR + s * 8)) pbad++;
+            }
+            printf("fast load %s: %llu words of the image compared with the SDRAM chip and the DDR3, %llu wrong; memory-test sums: %d of 7 differ; "
+                   "1200 port reads: %u wrong; DDR3 protocol errors %d\n", what, words, bad, badr, pbad,
+                   (int)dut->rootp->tb_mem_top__DOT__ddr__DOT__protocol_errors);
+            errors += (unsigned)bad + badr + pbad;
+            if (dut->rootp->tb_mem_top__DOT__ddr__DOT__protocol_errors) errors++;
+        };
+        long n = replay(0);
+        printf("fast load: the image (%ld bytes) replayed in %ld clocks (%.3f s at 96 MHz)\n", (long)IMG_END, n, n / 96e6);
+        if (n < 0) { printf("  FAIL: the replay did not finish\n"); errors++; } else verify("(first)");
+        // a download that starts part-way through the replay: the block reader stops, waits for any beats still owed,
+        // and replays from the start
+        n = replay(2000000);
+        printf("fast load, restarted after 2,000,000 clocks: replayed in %ld clocks\n", n);
+        if (n < 0) { printf("  FAIL: the restarted replay did not finish\n"); errors++; } else verify("(restarted)");
+    }
     printf("%s: %u errors, %llu clocks\n", errors ? "FAIL" : "PASS", errors, cycles);
     delete dut; return errors ? 1 : 0;
 }

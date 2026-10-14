@@ -20,7 +20,9 @@ No ROMs or other copyrighted data are in this repository; you supply your own MA
 Flip Screen (added in `gaiapolis_20261005.rbf`) and the Video timing option (`gaiapolis_20261008.rbf`)
 have been tried on the board too, both timings, and so have CRT Adjust and the sound fixes
 (`gaiapolis_20261010.rbf`). The Scandoubler Fx / forced scandoubler fix (`gaiapolis_20261011.rbf`) was
-tried on the setup of the user who reported the problem, and it fixed it.
+tried on the setup of the user who reported the problem, and it fixed it. Fast loading and the Scale option
+(`gaiapolis_20261014.rbf`) are checked in simulation (see "Fast loading" and "Scale" below); they have not been
+tried on a board yet.
 
 Known issues:
 
@@ -55,6 +57,20 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   Per frame it checks the vertical sync, the lines (448 picture rows of 376 pixels, 526 lines at 31.5 kHz),
   the frame period, and that each source line comes out twice, in order. Before the `hde` fix it showed no
   vertical sync at all; the 15 kHz run is the same as before (263 lines, 224 rows).
+* Fast loading (`gaiapolis_20261014`): `sim/emu/run_emu.sh` with `FAST=1` models the HPS side of the MRA's `address=`
+  attribute on the whole top level: the image is replayed from the DDR3 in 0.73 s at 96 MHz (the loader's rate is the
+  limit) and every one of its 10,158,080 words is where the ports read it, 0 wrong, with frames, timing, the rotated
+  frame buffer and the EEPROM as in a streamed load. `sim/run_mem.sh` replays it into `gaia_mem` with the DDR3 pushing
+  back and the ROZ regions poisoned first: 0 wrong words, the memory test's sums equal to the image's, and the same
+  after a download that starts part-way through the replay.
+* Scale: `sim/emu/run_emu.sh` with `SCALE= AR= HW= HH=` (video path only) compares the size the core asks the scaler
+  for with the framework's integer rule worked out in the bench from the picture's rows and width: 18 runs, none off.
+  With Orientation Horz: Normal, V-Integer, HV-Integer, Narrower and HV-Integer+ at 1920 x 1080 (aspect Original),
+  HV-Integer with Full Screen and with ARC1, HV-Integer+ with Full Screen and with CRT Adjust on, HV-Integer with the
+  forced scandoubler (448 rows), Narrower at 1280 x 720, HV-Integer+ at 3840 x 2160, at 200 x 150 and in direct video
+  (the scaler's size unknown). Turned (Vert, the default), with Scale on Normal, HV-Integer+, and HV-Integer with
+  Full Screen, and with ARC1: the aspect ratio passes through as before (Scale has no effect), and the rotated frame
+  buffer matches the picture pixel for pixel with `video_freak` in the path.
 * `sim/run_system.sh`: the whole machine from reset with the real ROM set through that memory subsystem, 1,500
   frames. It boots through the self-test (the 68000's wait loop runs 19,287 iterations a frame where MAME's is
   19,314; the PCM checksum through both K054539s from the SDRAM completes at frame ~915 as in MAME's
@@ -65,36 +81,42 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   the final RTL. It has not yet reached the ROZ-heavy scenes, character select and the stages: those
   were checked against the DDR3 latency instead, in `docs/mister-memory.md`.)
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the project for the 5CSEBA6U23I7:
-  47 % of the ALMs, 71 % of the block RAM (532 of 553 blocks, so there is almost none left), 65 DSPs, and
-  timing closes at 96 MHz with every check positive (`gaiapolis_20261011`: setup +0.36 ns, hold +0.16,
-  recovery +1.59, removal +1.74 in the slow 100 C model, `releases/gaiapolis_20261011.sta.summary`;
+  49 % of the ALMs, 71 % of the block RAM (532 of 553 blocks, so there is almost none left), 65 DSPs, and
+  timing closes at 96 MHz with every check positive (`gaiapolis_20261014`: setup +0.11 ns, hold +0.24,
+  recovery +1.31, removal +0.97 (the HDMI clock; +1.31 on the core clock) in the slow 100 C model,
+  `releases/gaiapolis_20261014.sta.summary`; `gaiapolis_20261011`: setup +0.36;
   `gaiapolis_20261010`: setup +0.40; `gaiapolis_20261008`: setup +0.19; `gaiapolis_20261005`: setup +0.26;
-  the first build, `gaiapolis_20261004`: setup +0.71). The fitter seed matters: `gaiapolis_20261011` closes
-  with the seed in `Gaiapolis.qsf` (1) and missed with seed 2 (by 0.24 ns), `gaiapolis_20261010` closed
+  the first build, `gaiapolis_20261004`: setup +0.71). The fitter seed matters: `gaiapolis_20261014` closes
+  with the seed in `Gaiapolis.qsf` (1) and with seed 2 (setup +0.18 ns), `gaiapolis_20261011` closed
+  with seed 1 and missed with seed 2 (by 0.24 ns), `gaiapolis_20261010` closed
   with seeds 1 and 2, and the sound change on its own, without CRT Adjust, missed with seeds 1 and 3 (by 0.03
   and 0.48 ns) and closed with seed 2.
 
 ## Install
 
-1. Download the newest RBF in `releases/` (`gaiapolis_20261011.rbf`, with Flip Screen, Video timing, CRT
-   Adjust, the sound fixes and the scandoubler fix) and the three `.mra` files from `mra/` (or clone this repository). Put the
+1. Download the newest RBF in `releases/` (`gaiapolis_20261014.rbf`, with Flip Screen, Video timing, CRT
+   Adjust, the sound fixes, the scandoubler fix, fast loading and Scale) and the three `.mra` files from `mra/` (or clone this repository). Put the
    RBF in `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_`
    name and date: MiSTer finds the core by the MRA's `<rbf>` name plus the date, and takes the newest if
    there are several. The earlier builds stay in `releases/` (`gaiapolis_20261004.rbf` is the first,
    without Flip Screen; `gaiapolis_20261005.rbf` adds Flip Screen and runs MAME's 59.19 Hz timing only;
    `gaiapolis_20261008.rbf` adds the Video timing option; `gaiapolis_20261010.rbf` adds CRT Adjust and the
    sound fixes; none of the four has a vertical sync with the scandoubler on, which `gaiapolis_20261011.rbf`
-   fixes).
+   fixes; `gaiapolis_20261014.rbf` adds fast loading and Scale). The three `.mra` files carry the `address=` attribute
+   that fast loading needs: use the ones from this repository or the zip, not older copies.
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
    and USA versions' ROMs are in the merged set, or in `gaiapolsj.zip` / `gaiapolsu.zip` next to it).
    No ROMs are distributed here.
-3. Start `Gaiapolis (World ver EAF)` from the Arcade menu. The ROM takes a few seconds to load.
+3. Start `Gaiapolis (World ver EAF)` from the Arcade menu. The ROM image is 20 MB. With a recent Main_MiSTer (one
+   that knows the MRA's `address=` attribute) it is copied to the DDR3 in one go and loaded in about a second; an older
+   one streams it through the HPS port, as before, which takes far longer (see "Fast loading").
 
 ## OSD options
 
 | Option | Values | |
 |---|---|---|
 | Aspect ratio | Original, Full Screen, [ARC1], [ARC2] | Original is 3:4 when rotated (Vert) and 4:3 when not; ARC1 / ARC2 are the custom ratios from `MiSTer.ini` |
+| Scale | Normal, V-Integer, HV-Integer, Narrower HV-Integer, HV-Integer+ | Integer scaling for the HDMI scaler (the framework's `video_freak`; the 15 kHz analog output is not touched). Normal leaves the picture's size to the scaler. Shown with Orientation Horz only: turned through the frame buffer (Vert, the default) the picture stays Normal. See "Scale" below |
 | Orientation | Vert, Horz | Not shown in direct video (see below). Vert: rotated for a monitor on its side (the frame buffer in DDR3, the framework's `screen_rotate`). Horz: the native raster |
 | Rotation | CW, CCW | Not shown in direct video (see below). Which way Vert turns the picture, if your screen wants it the other way |
 | Flip Screen | Off, On | The picture turned 180 degrees, on every output (analog, direct video, HDMI). Done on the finished picture through a frame buffer in the DDR3, so it adds one frame (16 ms) of delay while it is on and nothing when it is off. See below |
@@ -212,6 +234,29 @@ still puts the left mix on both channels.
 
 The whole-machine bench is silent for its first 110 frames, so these fixes were checked against MAME's
 audio at the chip level, not in the full machine's simulation, and then on the board.
+
+**Fast loading.** The three MRAs carry `address="0x32000000"` on the ROM image's `<rom>`. A recent
+Main_MiSTer then does not stream the 20 MB image through the HPS port a byte at a time but copies the
+assembled image into the DDR3 in one go and ends a download that has no data, only a start address:
+the image's length. The core stays in reset, reads the image back from the DDR3 in 256-byte blocks
+(`target/mister/gaia_mem.sv`; byte 0x32000000, clear of the ROZ memories, the Flip Screen buffers and the rotated
+frame buffer) and pushes the words into the same loader FIFO the streamed bytes go through, so the memory layout,
+the cache sweep and the memory test behave as before (the memory test is handed the replayed bytes too, so its sums
+are the image's). A Main_MiSTer that does not know the attribute streams the bytes as before (`ioctl_addr` is 0 at
+the start of such a download, which is how the two are told apart), so one RBF and one set of MRAs serve both. To
+see which of the two you got, switch on the Diagnostic overlay: the *download* square (row 0, 11th from the left)
+is lit for about a second with fast loading and for the whole, much longer streamed load without. How it works:
+`docs/mister-memory.md`, "Fast load".
+
+**Scale.** Normal, V-Integer, HV-Integer, Narrower HV-Integer and HV-Integer+: the framework's `video_freak` after
+`arcade_video`, for the HDMI scaler, which gets an exact size in pixels instead of the aspect ratio (the 15 kHz
+analog output is not affected). It works from the finished picture (the scandoubler and CRT Adjust included) and
+the scaler's own output size; with Scale on Normal `VIDEO_ARX` / `VIDEO_ARY` are what they were. Full Screen with an
+integer Scale is given the screen's own proportions, since Full Screen has none for the integer rule to work from.
+**It acts with Orientation Horz only**, and the menu entry is hidden with Vert: with the picture turned through
+the DDR3 frame buffer the scaler shows that buffer, which `video_freak` does not know about, so the sizes it would work
+out would be those of the unturned picture. Integer scaling of the turned picture is not there yet.
+
 
 ## Differences from the Pocket core
 

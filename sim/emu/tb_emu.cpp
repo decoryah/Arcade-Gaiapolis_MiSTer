@@ -163,6 +163,11 @@ int main(int argc, char **argv) {
     if (fread(nv.data(), 1, 128, f) != 128) { fprintf(stderr, "short eeprom\n"); return 1; } fclose(f);
 
     dut = new Vtb_emu_top;
+    {   // the scaler's output size, as the framework hands it to the core (0 x 0 with direct video)
+        const bool direct = getenv("DIRECT") && atoi(getenv("DIRECT"));
+        dut->HDMI_WIDTH  = getenv("HW") ? atoi(getenv("HW")) : (direct ? 0 : 1920);
+        dut->HDMI_HEIGHT = getenv("HH") ? atoi(getenv("HH")) : (direct ? 0 : 1080);
+    }
     dut->RESET = 1; run(40); dut->RESET = 0;
     if (diag) set_status(9, 1);                 // diagnostic overlay + memory test at the end of the load
     bool flip = getenv("FLIP") && atoi(getenv("FLIP"));
@@ -182,6 +187,11 @@ int main(int argc, char **argv) {
         if (getenv("HORZ") && atoi(getenv("HORZ"))) set_status(2, 1);
         if (getenv("FX")) { int v = atoi(getenv("FX")); for (int i = 0; i < 3; i++) set_status(3 + i, (v >> i) & 1); }   // Scandoubler Fx
     }
+    {   // Scale (status[34:32]: 0 Normal, 1 V-Integer, 2 HV-Integer, 3 Narrower HV-Integer, 4 HV-Integer+), Aspect ratio (status[122:121])
+        auto field = [&](int lo, int w, int v) { for (int i = 0; i < w; i++) set_status(lo + i, (v >> i) & 1); };
+        if (getenv("SCALE")) field(32, 3, atoi(getenv("SCALE")));
+        if (getenv("AR")) field(121, 2, atoi(getenv("AR")));
+    }
     run(40000);                                  // SDRAM init, cache sweeps
     if (noload) {                                // a quick check of the video path: no ROM, the overlay is the test pattern
         printf("up after %llu clocks; no image download (video-path check)\n", cycles);
@@ -190,8 +200,77 @@ int main(int argc, char **argv) {
     } else {
         printf("up after %llu clocks; loading %ld bytes\n", cycles, IMG_LEN);
         unsigned long long t0 = cycles;
-        download(0, img.data(), IMG_LEN, 2);
-        printf("image loaded in %llu clocks\n", cycles - t0);
+        if (getenv("FAST") && atoi(getenv("FAST"))) {
+            // what Main_MiSTer does for address= on the MRA's index-0 <rom>: the whole assembled image is copied into the DDR3
+            // at that address, between the start and the end of a download that carries no bytes, only a start address
+            // (ioctl_addr) that is the image's length; hps_io counts one more at the end. The core then replays it
+            auto &dd = dut->rootp->tb_emu_top__DOT__ddr__DOT__mem;
+            const size_t FLB = 0x400000;                 // beats in the client's window: byte 0x32000000
+            for (size_t i = 0; i < (size_t)IMG_LEN / 8; i++) {
+                unsigned long long v = 0;
+                for (int b = 7; b >= 0; b--) v = (v << 8) | img[i * 8 + b];
+                dd[FLB + i] = v;
+            }
+            HPSV(r_index) = 0; HPSV(r_addr) = IMG_LEN; HPSV(r_download) = 1; run(64);
+            HPSV(r_addr) = IMG_LEN + 1; HPSV(r_download) = 0;
+            unsigned long long t1 = cycles; long guard = 0;
+            const long GUARD = 400000000;
+            while (dut->rootp->tb_emu_top__DOT__u_emu__DOT__fast_dl && guard++ < GUARD) run(1);
+            printf("fast load: the image replayed from the DDR3 in %llu clocks (%.3f s at 96 MHz)\n", cycles - t1, (cycles - t1) / 96e6);
+            if (guard >= GUARD) { printf("  FAIL: the replay did not finish\n"); errors++; }
+            run(8);
+        } else {
+            download(0, img.data(), IMG_LEN, 2);
+            printf("image loaded in %llu clocks\n", cycles - t0);
+        }
+        {   // the loader's work against the layout of target/mister/gaia_mem.sv: every word of the image where the memory
+            // subsystem's ports expect it, in the SDRAM chip's array (programs, tiles, PCM, sprites) and in the DDR3 model
+            // (the ROZ characters, column-major within the tile, and the map)
+            run(4000);
+            auto &sd = dut->rootp->tb_emu_top__DOT__chip__DOT__mem;
+            auto &dm = dut->rootp->tb_emu_top__DOT__ddr__DOT__mem;
+            const unsigned SD_TILE = 0x000000, SD_PCM = 0x100000, SD_SPR = 0x300000, SD_PROG = 0x700000, SD_SND = 0x880000;
+            const unsigned DD_MAP = 0x00000, DD_CHR = 0x20000;
+            unsigned long long words = 0, bad_w = 0;
+            auto chk_sd = [&](size_t a, unsigned v) { words++; if (sd[a] != v) { if (bad_w < 6) printf("  SDRAM word %06zx: %04x, expected %04x\n", a, (unsigned)sd[a], v); bad_w++; } };
+            auto chk_dd = [&](size_t beat, unsigned lane, unsigned v) {
+                words++; unsigned g = (unsigned)((dm[beat] >> (16 * lane)) & 0xffff);
+                if (g != v) { if (bad_w < 6) printf("  DDR3 beat %06zx lane %u: %04x, expected %04x\n", beat, lane, g, v); bad_w++; }
+            };
+            for (size_t wa = 0; wa < (size_t)IMG_LEN / 2; wa++) {
+                unsigned v = ((unsigned)img[wa * 2] << 8) | img[wa * 2 + 1];
+                size_t b = wa * 2;
+                if (b < 0x300000)      chk_sd(SD_PROG + wa, v);
+                else if (b < 0x340000) chk_sd(SD_SND + (wa - 0x180000), v);
+                else if (b < 0x540000) chk_sd(SD_TILE + (wa - 0x1A0000), v);
+                else if (b < 0x6C0000) {
+                    unsigned wchr = (unsigned)(wa - 0x2A0000);          // word within the character region
+                    unsigned c = ((wchr >> 6) << 6) | ((wchr & 3) << 4) | ((wchr >> 2) & 15);   // {wchr[19:6], wchr[1:0], wchr[5:2]}
+                    chk_dd(DD_CHR + (c >> 2), c & 3, v);
+                } else if (b < 0x760000) {
+                    unsigned wmap = (unsigned)(wa - 0x360000);          // word within the map region
+                    chk_dd(DD_MAP + (wmap >> 2), wmap & 3, v);
+                } else if (b < 0xB60000) chk_sd(SD_PCM + (wa - 0x3B0000), v);
+                else                     chk_sd(SD_SPR + (wa - 0x5B0000), v);
+            }
+            printf("loader check: %llu words of the image compared with the SDRAM chip and the DDR3, %llu wrong\n", words, bad_w);
+            if (bad_w) { printf("  FAIL: the loaded image is not where the ports read it\n"); errors++; }
+        }
+#ifdef PROBE
+        {   // the memory test's sums of the image (it sums the bytes as they stream in, or, for a fast load, as the core
+            // replays them): the image's own region sums, which the test compares its read-back with
+            const long rb[8] = {0, 0x300000, 0x340000, 0x540000, 0x6C0000, 0x760000, 0xB60000, 0x1360000};
+            auto &ls = dut->rootp->tb_emu_top__DOT__u_emu__DOT__u_mem__DOT__u_test__DOT__lsum;
+            int badr = 0;
+            for (int r = 0; r < 7; r++) {
+                unsigned s = 0; for (long a = rb[r]; a < rb[r + 1]; a++) s += img[a];
+                s &= 0xffffff;
+                if ((unsigned)ls[r] != s) { badr++; printf("  memory-test sum of region %d: %06x, the image's %06x\n", r, (unsigned)ls[r], s); }
+            }
+            printf("memory-test sums of the image: %d of 7 regions equal\n", 7 - badr);
+            if (badr) { printf("  FAIL: the memory test's sums are not the image's\n"); errors++; }
+        }
+#endif
         download(2, nv.data(), 128, 40);
         printf("EEPROM default loaded; frames so far %d\n", frames_done);
     }
@@ -247,6 +326,49 @@ int main(int argc, char **argv) {
     printf("geometry (last frame): %d rows with picture, %d lines a frame; first row %ld clocks after the vsync pulse (%.3f lines);"
            " rows start %ld..%ld clocks after hsync, %ld..%ld clocks wide\n",
            geo_rows, geo_lines, geo_first, geo_first / (tnow ? 6144.0 : 6096.0), geo_smin, geo_smax, geo_wmin, geo_wmax);
+    {   // Scale: the size the core asks the scaler for. Worked out here from the picture as it leaves arcade_video (rows,
+        // pixels in a row), the OSD settings and the scaler's size, by the framework's documented rule: the picture is
+        // scaled up by the largest whole factor that fits the scaler's height; its width follows the aspect ratio (V-Integer)
+        // or is a whole multiple of the pixel row (the HV modes: narrower = the multiple below the aspect width, wider = the
+        // one above it, HV-Integer = whichever of the two is nearer, the wider one only if it still fits the width).
+        // Turned through the frame buffer (Orientation Vert) the core leaves Scale at Normal and the aspect passes through
+        const int menu = getenv("SCALE") ? atoi(getenv("SCALE")) : 0, ar = getenv("AR") ? atoi(getenv("AR")) : 0;
+        const bool horz = (getenv("HORZ") && atoi(getenv("HORZ"))) || (getenv("DIRECT") && atoi(getenv("DIRECT")));
+        const int HW = dut->HDMI_WIDTH, HH = dut->HDMI_HEIGHT;
+        const int rows = geo_rows, w = geo_rows ? de_last_count / geo_rows : 0;
+        static const int map[5] = {0, 1, 4, 2, 3};                    // the OSD's order -> video_freak's SCALE
+        const int sel = (horz && menu >= 0 && menu <= 4) ? map[menu] : 0;
+        // Full Screen (0 / 0) has no proportions for the integer rule to work from: with an integer mode the core
+        // gives it the scaler's own (Gaiapolis.sv's fs_int), unless the scaler's size is unknown (direct video)
+        const bool fs_int = ar == 1 && sel != 0 && HW != 0 && HH != 0;
+        const int arx_in = fs_int ? HW : (ar == 0 ? (horz ? 4 : 3) : ar - 1), ary_in = fs_int ? HH : (ar == 0 ? (horz ? 3 : 4) : 0);
+        int ex = arx_in, ey = ary_in; bool eabs = false, checked = true;
+        if (sel && !(!ary_in && arx_in) && rows > 0 && HH / rows > 0) {
+            int oh = rows * (HH / rows), ht = 0, hi, dn;
+            if (!ary_in) {                                            // no proportions at all: the framework's own rule, reported not judged
+                int m = HW / w ? HW / w : 1; hi = w * m; oh = rows * m; dn = HW; checked = false;
+            } else {
+                ht = (int)((long)oh * arx_in / ary_in); int m0 = ht / w ? ht / w : 1; hi = w * m0; dn = ht;
+                if (hi > HW) { int m1 = HW / w ? HW / w : 1; hi = w * m1; oh = rows * m1; dn = HW; }
+            }
+            const int wide = hi + w;
+            const bool narrow = (((ht - hi) & 0xfff) <= ((wide - ht) & 0xfff)) || wide > HW;
+            const int wres = hi == ht ? hi : wide;
+            switch (sel) {
+                case 2: ex = hi; break;
+                case 3: ex = wres > HW ? hi : wres; break;
+                case 4: ex = narrow ? hi : wres; break;
+                default: ex = dn;
+            }
+            ey = oh; eabs = true;
+        }
+        const int gx = dut->VIDEO_ARX & 0xfff, gy = dut->VIDEO_ARY & 0xfff, gax = (dut->VIDEO_ARX >> 12) & 1, gay = (dut->VIDEO_ARY >> 12) & 1;
+        printf("scale: Scale %d (SCALE %d, %s) Aspect %d, picture %d rows of %d pixels, scaler %d x %d: core asks for %s%d x %s%d; rule gives %s%d x %s%d%s\n",
+               menu, sel, horz ? "not turned" : "turned", ar, rows, w, HW, HH, gax ? "" : "ratio ", gx, gay ? "" : "ratio ", gy,
+               eabs ? "" : "ratio ", ex, eabs ? "" : "ratio ", ey, checked ? "" : " (not checked)");
+        if (checked && (gx != ex || gy != ey || gax != (int)eabs || gay != (int)eabs)) { printf("  FAIL: the size asked of the scaler\n"); errors++; }
+        if (eabs && (HH - ey) < 0) printf("  note: the height asked for is %d pixels over the scaler's\n", ey - HH);
+    }
 #ifdef PROBE
     printf("probe: status[9]=%u  core de clocks %u  core cen_pix ticks %u  max core rgb %06x  max overlay out %06x  VGA nonzero clocks %u (in DE %u)\n",
            pk_en, pk_gade, pk_cen, pk_core, pk_ovl, pk_vga_any, pk_arc);
@@ -279,7 +401,10 @@ int main(int argc, char **argv) {
     // the rotated frame buffer: 224 wide, 376 tall, 4 bytes a pixel, stride 896, three 8 MB buffers
     int fbw = dut->FB_WIDTH, fbh = dut->FB_HEIGHT;
     printf("FB_EN=%d FB_WIDTH=%d FB_HEIGHT=%d aspect %d:%d\n", dut->FB_EN, fbw, fbh, dut->VIDEO_ARX, dut->VIDEO_ARY);
-    if (!dut->FB_EN || fbw != VIS_H || fbh != VIS_W) { printf("  FAIL: frame buffer geometry\n"); errors++; }
+    // with Orientation Horz or direct video the picture is not turned: the scaler gets the raster itself, the frame buffer is off
+    const bool norot = (getenv("HORZ") && atoi(getenv("HORZ"))) || (getenv("DIRECT") && atoi(getenv("DIRECT")));
+    if (norot) { if (dut->FB_EN) { printf("  FAIL: the frame buffer is on though the picture is not turned\n"); errors++; } }
+    else if (!dut->FB_EN || fbw != VIS_H || fbh != VIS_W) { printf("  FAIL: frame buffer geometry\n"); errors++; }
     const int stride = 896;
     auto fb_pixel = [&](int buf, int row, int col) -> unsigned {
         unsigned long off = (unsigned long)row * stride + (unsigned long)col * 4;
@@ -294,14 +419,16 @@ int main(int argc, char **argv) {
         return ok;
     };
     long best = 0; int best_buf = -1; const char *best_src = "";
-    for (int buf = 0; buf < 3; buf++) {
+    for (int buf = 0; buf < (norot ? 0 : 3); buf++) {
         long a = match(frame_last, buf), b = match(frame_prev, buf);
         printf("  buffer %d: %ld of %d pixels equal the last frame rotated, %ld the one before\n", buf, a, VIS_W * VIS_H, b);
         if (a > best) { best = a; best_buf = buf; best_src = "last"; }
         if (b > best) { best = b; best_buf = buf; best_src = "previous"; }
     }
-    printf("frame buffer vs picture: best buffer %d (%s frame) matches %ld of %d pixels\n", best_buf, best_src, best, VIS_W * VIS_H);
-    if (best != VIS_W * VIS_H) { printf("  FAIL: the rotated frame buffer is not the picture turned a quarter clockwise\n"); errors++; }
+    if (norot) printf("frame buffer: off, the picture is not turned (Orientation Horz or direct video)\n");
+    else printf("frame buffer vs picture: best buffer %d (%s frame) matches %ld of %d pixels\n", best_buf, best_src, best, VIS_W * VIS_H);
+    if (norot) {}
+    else if (best != VIS_W * VIS_H) { printf("  FAIL: the rotated frame buffer is not the picture turned a quarter clockwise\n"); errors++; }
     else {
         std::vector<unsigned> rot(VIS_W * VIS_H);
         for (int r = 0; r < VIS_W; r++) for (int c = 0; c < VIS_H; c++) rot[r * VIS_H + c] = fb_pixel(best_buf, r, c);

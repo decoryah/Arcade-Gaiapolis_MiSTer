@@ -88,6 +88,7 @@ module tb_mister_top #(
         .clk(clk), .clk_sdram(clk), .init(reset), .dl_start(1'b0), .ready(mem_ready), .rd_late(1'b0), .burst_slow(1'b0),
         .test_start(1'b0), .test_run(), .test_done(), .test_ok(), .test_stable(), .vram_ok(), .vram_bad(),
         .dl_we(1'b0), .dl_addr(25'd0), .dl_data(8'd0), .dl_wait(),
+        .fl_go(1'b0), .fl_len(25'd0), .fl_done(),
         .prog_req(prog_req), .prog_addr(prog_addr), .prog_ack(prog_ack), .prog_q(prog_q),
         .tile_req(tile_req), .tile_addr(tile_addr), .tile_ack(tile_ack), .tile_q(tile_q),
         .map_req(map_req), .map_addr(map_addr), .map_ack(map_ack), .map_q(map_q),
