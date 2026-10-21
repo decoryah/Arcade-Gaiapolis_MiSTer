@@ -103,7 +103,8 @@ What was checked before the hardware tests, in simulation and in the Quartus too
    `gaiapolis_20261008.rbf` adds the Video timing option; `gaiapolis_20261010.rbf` adds CRT Adjust and the
    sound fixes; none of the four has a vertical sync with the scandoubler on, which `gaiapolis_20261011.rbf`
    fixes; `gaiapolis_20261014.rbf` adds fast loading and Scale). The three `.mra` files carry the `address=` attribute
-   that fast loading needs: use the ones from this repository or the zip, not older copies.
+   that fast loading needs, and (the update of 2026-10-21, `Gaiapolis_MiSTer_20261021.zip`, with the same RBF) the
+   button names Attack / Beast / Magic: use the ones from this repository or the newest zip, not older copies.
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
    and USA versions' ROMs are in the merged set, or in `gaiapolsj.zip` / `gaiapolsu.zip` next to it).
    No ROMs are distributed here.
@@ -142,9 +143,11 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   items are hidden. The device on the other end turns the picture, from the game direction MiSTer reports
   (the MRA's `<rotation>vertical (cw)</rotation>`).
 
-Controls: joystick or gamepad for both players -- three buttons, Start and Coin each. On a gamepad
-the default mapping is A / B / R for buttons 1 / 2 / 3, Start for Start and Select for Coin (remap it
-in MiSTer's usual way). From the keyboard: 1 / 2 start, 5 / 6 coin and F2 for the test switch, on top
+Controls: joystick or gamepad for both players -- three buttons, Start and Coin each, named in MiSTer's button
+mapping menu by what they do (the names come from the MRA): **Attack** (the weapon), **Beast** (order the beast that an
+egg gives you to attack, or call it back) and **Magic** (cast the magic that crystals have charged). All three are
+used by the game; none is a spare. On a gamepad the default mapping is A / B / R for Attack / Beast / Magic, Start for
+Start and Select for Coin (remap it in MiSTer's usual way). From the keyboard: 1 / 2 start, 5 / 6 coin and F2 for the test switch, on top
 of MiSTer's usual keyboard-as-joystick. The game's own settings and high scores live in its EEPROM,
 which MiSTer saves and restores.
 
