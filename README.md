@@ -22,7 +22,9 @@ have been tried on the board too, both timings, and so have CRT Adjust and the s
 (`gaiapolis_20261010.rbf`). The Scandoubler Fx / forced scandoubler fix (`gaiapolis_20261011.rbf`) was
 tried on the setup of the user who reported the problem, and it fixed it. Fast loading and the Scale option
 (`gaiapolis_20261014.rbf`) have been run on the board by the repository owner and work (what they do, and what was
-checked in simulation, is under "Fast loading" and "Scale" below).
+checked in simulation, is under "Fast loading" and "Scale" below). The rotating background's colour fix
+(`gaiapolis_20261023.rbf`: the dark squares on the world map) has been run on the board by the repository owner too:
+the squares are gone and nothing else looks worse (see "World map colours" below).
 
 Known issues:
 
@@ -71,6 +73,11 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   (the scaler's size unknown). Turned (Vert, the default), with Scale on Normal, HV-Integer+, and HV-Integer with
   Full Screen, and with ARC1: the aspect ratio passes through as before (Scale has no effect), and the rotated frame
   buffer matches the picture pixel for pixel with `video_freak` in the path.
+* World map colours (`gaiapolis_20261023`): the Pocket repository's frozen-state ROZ bench (`sim/run_roz.sh` there, 24
+  MAME states, the RTL against the reference renderer pixel for pixel) passes with the reference renderer reading the
+  colour nibbles the new way; read MAME's way it differs in 19 of the 24 ROZ layers. In the finished frames the change
+  shows only in the intro's flight over the land (21 to 5,014 pixels of a frame, all on colour edges); a player select
+  state and the stage states are unchanged. The whole top level with a fast load runs as before.
 * `sim/run_system.sh`: the whole machine from reset with the real ROM set through that memory subsystem, 1,500
   frames. It boots through the self-test (the 68000's wait loop runs 19,287 iterations a frame where MAME's is
   19,314; the PCM checksum through both K054539s from the SDRAM completes at frame ~915 as in MAME's
@@ -82,27 +89,29 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   were checked against the DDR3 latency instead, in `docs/mister-memory.md`.)
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the project for the 5CSEBA6U23I7:
   49 % of the ALMs, 71 % of the block RAM (532 of 553 blocks, so there is almost none left), 65 DSPs, and
-  timing closes at 96 MHz with every check positive (`gaiapolis_20261014`: setup +0.11 ns, hold +0.24,
-  recovery +1.31, removal +0.97 (the HDMI clock; +1.31 on the core clock) in the slow 100 C model,
-  `releases/gaiapolis_20261014.sta.summary`; `gaiapolis_20261011`: setup +0.36;
+  timing closes at 96 MHz with every check positive (`gaiapolis_20261023`: setup +0.36 ns, hold +0.24,
+  recovery +1.73, removal +1.63 in the slow 100 C model, `releases/gaiapolis_20261023.sta.summary`;
+  `gaiapolis_20261014`: setup +0.11; `gaiapolis_20261011`: setup +0.36;
   `gaiapolis_20261010`: setup +0.40; `gaiapolis_20261008`: setup +0.19; `gaiapolis_20261005`: setup +0.26;
-  the first build, `gaiapolis_20261004`: setup +0.71). The fitter seed matters: `gaiapolis_20261014` closes
-  with the seed in `Gaiapolis.qsf` (1) and with seed 2 (setup +0.18 ns), `gaiapolis_20261011` closed
+  the first build, `gaiapolis_20261004`: setup +0.71). The fitter seed matters: `gaiapolis_20261023` closes
+  with the seed in `Gaiapolis.qsf` (1) and missed with seed 2 (by 0.08 ns), `gaiapolis_20261014` closed
+  with seeds 1 and 2 (seed 2 setup +0.18 ns), `gaiapolis_20261011` closed
   with seed 1 and missed with seed 2 (by 0.24 ns), `gaiapolis_20261010` closed
   with seeds 1 and 2, and the sound change on its own, without CRT Adjust, missed with seeds 1 and 3 (by 0.03
   and 0.48 ns) and closed with seed 2.
 
 ## Install
 
-1. Download the newest RBF in `releases/` (`gaiapolis_20261014.rbf`, with Flip Screen, Video timing, CRT
-   Adjust, the sound fixes, the scandoubler fix, fast loading and Scale) and the three `.mra` files from `mra/` (or clone this repository). Put the
+1. Download the newest RBF in `releases/` (`gaiapolis_20261023.rbf`, with Flip Screen, Video timing, CRT
+   Adjust, the sound fixes, the scandoubler fix, fast loading, Scale and the world map colour fix) and the three `.mra` files from `mra/` (or clone this repository). Put the
    RBF in `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_`
    name and date: MiSTer finds the core by the MRA's `<rbf>` name plus the date, and takes the newest if
    there are several. The earlier builds stay in `releases/` (`gaiapolis_20261004.rbf` is the first,
    without Flip Screen; `gaiapolis_20261005.rbf` adds Flip Screen and runs MAME's 59.19 Hz timing only;
    `gaiapolis_20261008.rbf` adds the Video timing option; `gaiapolis_20261010.rbf` adds CRT Adjust and the
    sound fixes; none of the four has a vertical sync with the scandoubler on, which `gaiapolis_20261011.rbf`
-   fixes; `gaiapolis_20261014.rbf` adds fast loading and Scale). The three `.mra` files carry the `address=` attribute
+   fixes; `gaiapolis_20261014.rbf` adds fast loading and Scale; `gaiapolis_20261023.rbf` fixes the colours of the
+   rotating background, the world map's dark squares). The three `.mra` files carry the `address=` attribute
    that fast loading needs, and (the update of 2026-10-21, `Gaiapolis_MiSTer_20261021.zip`, with the same RBF) the
    button names Attack / Beast / Magic: use the ones from this repository or the newest zip, not older copies.
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
@@ -261,11 +270,31 @@ the DDR3 frame buffer the scaler shows that buffer, which `video_freak` does not
 out would be those of the unturned picture. Integer scaling of the turned picture is not there yet.
 
 
+**World map colours.** The world map between stages showed dark squares and lighter or pink blocks next to the place
+names and route lines (NEOMOSC, TURAN, ...). MAME shows the same (MAME Testers issue 00231 reported "black blocks in the
+map" in 2008 and suspected a bad dump of the ROZ ROMs), and every build of this core up to `gaiapolis_20261014`
+copied it. The ROMs are fine: the rotating background layer (the K053936 ROZ plane) takes each tile's palette from
+the map ROM, where one byte holds the palette numbers of two neighbouring tiles, one per half-byte, and MAME's
+`get_gai_936_tile_info` (the reference the Pocket core was written against) gives the even tile the high half and
+the odd tile the low one. It is the other way round. That only shows where the colour changes between the two tiles
+of a byte -- on the map, the edge of every label and route, and a route that is not yet lit has a dark palette,
+hence the dark squares. Read the other way, every label and route of the map is one clean run of its own colour
+with plain land around it (88 stray tiles on the world map before, none after; elsewhere in the map ROM the new
+order is as clean or cleaner). A recording of a real board (a 1CC run, "Gaiapolis - Prince 10,102 - No Elixir 1CC
+[PCB]") confirms it: its map has no squares, and in the intro's flight over the forest it shows a green crater, grass
+and stone posts where MAME's order draws a red crater, a brown log and white streaks along the grass. Fixed in
+`rtl/k053936_roz.sv` (one line); `gaiapolis_20261023` is the first build with it. Tried on the board: the squares
+are gone and nothing else looks worse.
+
+
 ## Differences from the Pocket core
 
 The core's ports are the same; what sits behind them is not, because MiSTer has no PSRAM or
 SRAM. The programs moved to the SDRAM behind caches, the ROZ plane's memory to the DDR3, the
 tile RAM to block RAM. The reasoning and the numbers are in `docs/mister-memory.md`.
+
+The ROZ plane's colour nibbles are read the other way round from the Pocket core (and MAME): see "World map
+colours" above.
 
 Open items inherited from the Pocket core (its README): the ROZ plane's lead when the game
 writes its registers late in vblank; a dozen frames of dropped tilemap lines at the start of

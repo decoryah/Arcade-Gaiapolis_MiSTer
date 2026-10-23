@@ -310,6 +310,16 @@ The whole-machine bench (110 frames) is silent that early, so these changes are 
 the whole machine with them boots and runs as before (every frame the board period, the picture and the frame
 buffer as before).
 
+## ROZ colour nibbles
+
+The ROZ map ROM (`gfx4`) packs the 4-bit palette numbers of two horizontally neighbouring tiles into one byte of its
+first 128 KB: the even tile is the **low** nibble, the odd tile the high one. MAME's `get_gai_936_tile_info` has them the
+other way round, and so had this core (`rtl/k053936_roz.sv`, `nib_now`) until `gaiapolis_20261023`. Inside an area of one
+colour the two nibbles are equal and nothing changes; where the colour changes between the two tiles of a byte, each got
+its neighbour's palette -- on the world map the edge of every label and route, dark squares where a route is still unlit.
+Read the right way every label and route of the map is one clean run of its own colour, which a PCB recording confirms
+(README, "World map colours").
+
 ## Verification
 
 * `sim/emu/run_emu.sh` with `TIMING_MAME=0` or `1` checks the frame period in clocks on the
@@ -365,7 +375,9 @@ buffer as before).
   nearly all of the blocks (the first build used 525; Flip Screen's line buffers and the deeper
   write FIFO took four; CRT Adjust's line buffer three more), so a core change that adds memory will need the caches or the
   line buffers looked at -- and 65 of 112 DSPs. Timing closes at 96 MHz in the slow 100 C
-  model with every check positive: `gaiapolis_20261014` (fast loading and Scale) setup +0.11 ns, hold +0.24,
+  model with every check positive: `gaiapolis_20261023` (the ROZ colour fix) setup +0.36 ns, hold +0.24, recovery
+  +1.73, removal +1.63, HDMI clock setup +0.38 (`releases/gaiapolis_20261023.sta.summary`, seed 1; seed 2 missed, -0.08);
+  `gaiapolis_20261014` (fast loading and Scale) setup +0.11 ns, hold +0.24,
   recovery +1.31, removal +0.97 (HDMI clock; +1.31 on the core clock), HDMI clock setup +0.42
   (`releases/gaiapolis_20261014.sta.summary`, seed 1; seed 2 closed too: setup +0.18, hold +0.25, recovery +1.48);
   `gaiapolis_20261011` (the scandoubler fix) setup +0.36 ns, hold +0.16,
