@@ -2,7 +2,8 @@
 """make_dac_table.py [out.hex] : the OSD's Colours = Board DAC table (rtl/data/k054573_dac.hex), one byte per code.
 
 The board turns each 8-bit colour into a voltage with a Konami 054573 per channel (brightness from the 054574). Traced
-from the 054573 repro board's Gerbers and BOM: eight open-collector 74LS07 outputs, one per bit, pull a summing node
+from the Gerbers and BOM of Ace's 054573 reproduction
+(https://www.ukvac.com/forum/threads/konami-054573-and-054574-reproductions.84054/): eight open-collector 74LS07 outputs, one per bit, pull a summing node
 down through 49k, 24k, 12k, 6k, 3.1k, 1.7k, 800R and 380R (D0..D7) when the bit is 0; the node has 1.2k to ground and is
 fed by a current source (the brightness); two diodes and an NPN emitter follower with 220R take it to the output.
 A conductance divider, not a resistor ladder: the output rises faster near the top, so mid tones are darker than a

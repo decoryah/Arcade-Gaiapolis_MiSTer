@@ -304,7 +304,8 @@ video DAC:
   shows plain integer arithmetic inside (blending, shadows) and no table or curve, so the curve can only be in the DAC.
   Its brightness code 0 is wired to 0xFF, and that is the only level Gaiapolis selects, so the DACs run at one fixed
   current through the whole game.
-* The 054573 is a small sealed module. Traced from the Gerbers and BOM of a repro of it: each data bit drives an
+* The 054573 is a small sealed module. Traced from the Gerbers and BOM of Ace's reproduction of it
+  ([UKVAC](https://www.ukvac.com/forum/threads/konami-054573-and-054574-reproductions.84054/)): each data bit drives an
   open-collector buffer (74LS07) that, while the bit is 0, pulls one summing node down through its own resistor
   (49k, 24k, 12k, 6k, 3.1k, 1.7k, 800R and 380R for D0..D7); the node is fed by the brightness current and has 1.2k to
   ground, and two diodes and an emitter follower take it to the output. That is a conductance divider, not a resistor
@@ -403,7 +404,9 @@ at about a quarter of a MHz, so a thousand frames takes hours.
   (PWB353396A). Together they are the basis of the board video timing (the "Video timing" option): the
   chip's behaviour from the first, how it is clocked and wired on this board from the second. SiliconRE's
   [K054338 trace](https://github.com/furrtek/SiliconRE/tree/master/Konami/054338) and the same schematic's video DAC
-  chain are, with the Gerbers and BOM of the K054573 / K054574 repro modules, the basis of the Colours option.
+  chain are, with **Ace**'s Gerbers and BOM of the
+  [K054573 / K054574 reproductions](https://www.ukvac.com/forum/threads/konami-054573-and-054574-reproductions.84054/),
+  the basis of the Colours option.
 * **Jose Tejada (jotego)** -- JTFRAME's MiSTer SDRAM clock phase and read-capture timing, which this
   core's PLL and controller settings follow.
 
