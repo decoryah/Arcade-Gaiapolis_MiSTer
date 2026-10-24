@@ -24,7 +24,8 @@ tried on the setup of the user who reported the problem, and it fixed it. Fast l
 (`gaiapolis_20261014.rbf`) have been run on the board by the repository owner and work (what they do, and what was
 checked in simulation, is under "Fast loading" and "Scale" below). The rotating background's colour fix
 (`gaiapolis_20261023.rbf`: the dark squares on the world map) has been run on the board by the repository owner too:
-the squares are gone and nothing else looks worse (see "World map colours" below).
+the squares are gone and nothing else looks worse (see "World map colours" below). So has the Colours option
+(`gaiapolis_20261024.rbf`: the board's video DAC curve, the default), which matches the PCB footage (see "Colours" below).
 
 Known issues:
 
@@ -78,6 +79,11 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   colour nibbles the new way; read MAME's way it differs in 19 of the 24 ROZ layers. In the finished frames the change
   shows only in the intro's flight over the land (21 to 5,014 pixels of a frame, all on colour edges); a player select
   state and the stage states are unchanged. The whole top level with a fast load runs as before.
+* Colours (`gaiapolis_20261024`): `sim/emu/run_emu.sh` run twice, with Colours on Board DAC and with `COLOURS_MAME=1`,
+  and `sim/emu/dac_check.py` on the two pictures: every pixel of the Board DAC picture is the MAME run's pixel looked
+  up in the table, at the same place (0 of 252,672 channel values off), with the picture's geometry, the frame timing
+  and the rotated frame buffer the same in both runs. The table (`rtl/data/k054573_dac.hex`, from
+  `tools/make_dac_table.py`) is, value for value, the MiSTer gamma file that was tried on the board first.
 * `sim/run_system.sh`: the whole machine from reset with the real ROM set through that memory subsystem, 1,500
   frames. It boots through the self-test (the 68000's wait loop runs 19,287 iterations a frame where MAME's is
   19,314; the PCM checksum through both K054539s from the SDRAM completes at frame ~915 as in MAME's
@@ -89,11 +95,12 @@ What was checked before the hardware tests, in simulation and in the Quartus too
   were checked against the DDR3 latency instead, in `docs/mister-memory.md`.)
 * Quartus Prime Lite 17.0.2 (MiSTer's toolchain) compiles the project for the 5CSEBA6U23I7:
   49 % of the ALMs, 71 % of the block RAM (532 of 553 blocks, so there is almost none left), 65 DSPs, and
-  timing closes at 96 MHz with every check positive (`gaiapolis_20261023`: setup +0.36 ns, hold +0.24,
-  recovery +1.73, removal +1.63 in the slow 100 C model, `releases/gaiapolis_20261023.sta.summary`;
-  `gaiapolis_20261014`: setup +0.11; `gaiapolis_20261011`: setup +0.36;
+  timing closes at 96 MHz with every check positive (`gaiapolis_20261024`: setup +0.15 ns, hold +0.24,
+  recovery +1.66, removal +2.22 in the slow 100 C model, `releases/gaiapolis_20261024.sta.summary`;
+  `gaiapolis_20261023`: setup +0.36; `gaiapolis_20261014`: setup +0.11; `gaiapolis_20261011`: setup +0.36;
   `gaiapolis_20261010`: setup +0.40; `gaiapolis_20261008`: setup +0.19; `gaiapolis_20261005`: setup +0.26;
-  the first build, `gaiapolis_20261004`: setup +0.71). The fitter seed matters: `gaiapolis_20261023` closes
+  the first build, `gaiapolis_20261004`: setup +0.71). The fitter seed matters: `gaiapolis_20261024` was built
+  with seed 2 (the seed in `Gaiapolis.qsf`, 1, closed too, setup +0.09 ns), `gaiapolis_20261023` closes
   with the seed in `Gaiapolis.qsf` (1) and missed with seed 2 (by 0.08 ns), `gaiapolis_20261014` closed
   with seeds 1 and 2 (seed 2 setup +0.18 ns), `gaiapolis_20261011` closed
   with seed 1 and missed with seed 2 (by 0.24 ns), `gaiapolis_20261010` closed
@@ -102,8 +109,8 @@ What was checked before the hardware tests, in simulation and in the Quartus too
 
 ## Install
 
-1. Download the newest RBF in `releases/` (`gaiapolis_20261023.rbf`, with Flip Screen, Video timing, CRT
-   Adjust, the sound fixes, the scandoubler fix, fast loading, Scale and the world map colour fix) and the three `.mra` files from `mra/` (or clone this repository). Put the
+1. Download the newest RBF in `releases/` (`gaiapolis_20261024.rbf`, with Flip Screen, Video timing, CRT
+   Adjust, the sound fixes, the scandoubler fix, fast loading, Scale, the world map colour fix and the Colours option) and the three `.mra` files from `mra/` (or clone this repository). Put the
    RBF in `/media/fat/_Arcade/cores/` and the MRAs in `/media/fat/_Arcade/`. Keep the RBF's `gaiapolis_`
    name and date: MiSTer finds the core by the MRA's `<rbf>` name plus the date, and takes the newest if
    there are several. The earlier builds stay in `releases/` (`gaiapolis_20261004.rbf` is the first,
@@ -111,7 +118,7 @@ What was checked before the hardware tests, in simulation and in the Quartus too
    `gaiapolis_20261008.rbf` adds the Video timing option; `gaiapolis_20261010.rbf` adds CRT Adjust and the
    sound fixes; none of the four has a vertical sync with the scandoubler on, which `gaiapolis_20261011.rbf`
    fixes; `gaiapolis_20261014.rbf` adds fast loading and Scale; `gaiapolis_20261023.rbf` fixes the colours of the
-   rotating background, the world map's dark squares). The three `.mra` files carry the `address=` attribute
+   rotating background, the world map's dark squares; `gaiapolis_20261024.rbf` adds the Colours option). The three `.mra` files carry the `address=` attribute
    that fast loading needs, and (the update of 2026-10-21, `Gaiapolis_MiSTer_20261021.zip`, with the same RBF) the
    button names Attack / Beast / Magic: use the ones from this repository or the newest zip, not older copies.
 2. Put your MAME 0.289 `gaiapols.zip` in `/media/fat/games/mame/` (the parent set; the Japan
@@ -131,6 +138,7 @@ What was checked before the hardware tests, in simulation and in the Quartus too
 | Rotation | CW, CCW | Not shown in direct video (see below). Which way Vert turns the picture, if your screen wants it the other way |
 | Flip Screen | Off, On | The picture turned 180 degrees, on every output (analog, direct video, HDMI). Done on the finished picture through a frame buffer in the DDR3, so it adds one frame (16 ms) of delay while it is on and nothing when it is off. See below |
 | Video timing | Board 59.88Hz, MAME 59.19Hz | The raster's size and sync widths. Board (the default) is what the board's K053252 timing chip produces from the values the game programs into it; MAME is MAME's fixed 512 x 264. See "Video timing" below. Takes effect at the next frame |
+| Colours | Board DAC, MAME | Board DAC (the default) puts R, G and B through the curve of the board's video DAC, darker mid tones as on a real board; MAME is the palette as it is, as MAME shows it (and every build before `gaiapolis_20261024`). On every output. Switch MiSTer's own gamma correction off with Board DAC. See "Colours" below |
 | Scandoubler Fx | None, HQ2x, CRT 25%, CRT 50%, CRT 75% | |
 | CRT Adjust | submenu: CRT Adjust Off, On; then CRT H-Size 0..+8 / -16..-1, CRT H-Position -48..+28, CRT V-Shift -16..+15 | Fits the picture to a 15 kHz analog (CRT) output: its width, its place in the line and its place in the frame, without the monitor losing sync. Does nothing while the scandoubler is in use. Off by default. See "CRT Adjust" below |
 | Test Mode | Off, On | The board's test switch: the game's service menu |
@@ -286,6 +294,37 @@ and stone posts where MAME's order draws a red crater, a brown log and white str
 `rtl/k053936_roz.sv` (one line); `gaiapolis_20261023` is the first build with it. Tried on the board: the squares
 are gone and nothing else looks worse.
 
+**Colours.** A real board's picture has darker mid tones than MAME's. MAME shows the palette as straight 8-bit values,
+which is what the colour chip computes, and the PCB recording above fits no straight line. The difference is in the
+video DAC:
+
+* The chain, from Franck78's schematic of this board: the K054338 colour chip (18F) puts 8-bit R, G and B on its pins,
+  straight into three Konami K054573 DAC modules (U71 red, U77 green, U72 blue). Its 8-bit brightness output goes to a
+  K054574 (U79), whose three outputs set the current each 054573 runs on. SiliconRE's trace of the 054338's silicon
+  shows plain integer arithmetic inside (blending, shadows) and no table or curve, so the curve can only be in the DAC.
+  Its brightness code 0 is wired to 0xFF, and that is the only level Gaiapolis selects, so the DACs run at one fixed
+  current through the whole game.
+* The 054573 is a small sealed module. Traced from the Gerbers and BOM of a repro of it: each data bit drives an
+  open-collector buffer (74LS07) that, while the bit is 0, pulls one summing node down through its own resistor
+  (49k, 24k, 12k, 6k, 3.1k, 1.7k, 800R and 380R for D0..D7); the node is fed by the brightness current and has 1.2k to
+  ground, and two diodes and an emitter follower take it to the output. That is a conductance divider, not a resistor
+  ladder: the voltage is the current divided by the conductance of the bits that are 0, which rises faster towards the
+  top, so mid tones come out darker than a linear DAC gives.
+* Solving that circuit for every code, with the brightness current as the one free value, fits the PCB recording's
+  title screen to 0.7 of 255 (rms over its colours, each channel with the capture's own gain and offset); a straight
+  line, MAME's, is 10.5 off, and the best plain gamma curve 1.9. With the current from that fit it also predicts the
+  colours of the intro's grass, path and clouds to within a few levels.
+* Board DAC maps code 0 to black and 0xEF, the brightest value the game writes, to full white, with the circuit's curve
+  in between (0x40 becomes 26, 0x80 74, 0xC0 151). `tools/make_dac_table.py` holds the model and writes the table
+  (`rtl/data/k054573_dac.hex`); in `Gaiapolis.sv` it sits right after the mixer, before the diagnostic overlay, Flip
+  Screen, CRT Adjust and the scaler, so every output gets it. Tried on the board: it matches the PCB footage.
+
+It is a model, not a measurement: the resistor values are the repro's (the original modules are sealed), the
+transistors and diodes generic, and the one free value comes from a video capture whose own levels are not known. The
+shape is the circuit's, the scale the footage's; an oscilloscope on a real board's RGB output would settle it. Switch
+MiSTer's own gamma correction (Video processing) off with Board DAC, or the curve is applied twice; with Colours on
+MAME a MiSTer gamma file can still be used.
+
 
 ## Differences from the Pocket core
 
@@ -294,7 +333,8 @@ SRAM. The programs moved to the SDRAM behind caches, the ROZ plane's memory to t
 tile RAM to block RAM. The reasoning and the numbers are in `docs/mister-memory.md`.
 
 The ROZ plane's colour nibbles are read the other way round from the Pocket core (and MAME): see "World map
-colours" above.
+colours" above. The colours go through the board's DAC curve by default (the Colours option, in `Gaiapolis.sv`;
+the Pocket core shows the palette as MAME does): see "Colours" above.
 
 Open items inherited from the Pocket core (its README): the ROZ plane's lead when the game
 writes its registers late in vblank; a dozen frames of dropped tilemap lines at the start of
@@ -315,7 +355,7 @@ objects on one pixel; and the attract intro running longer than MAME's before th
 | `releases/` | the tested RBF, with its timing and fitter summaries |
 | `sim/` | Verilator benches: memory subsystem, whole machine, and the MiSTer top level end to end |
 | `docs/mister-memory.md` | the memory design: partition, caches, timing, latency sweep, build results |
-| `tools/` | MRA generator and builder, PNG helpers for the benches |
+| `tools/` | MRA generator and builder, the Board DAC table's generator (the 054573 model), PNG helpers for the benches |
 
 ## Building
 
@@ -361,7 +401,9 @@ at about a quarter of a MHz, so a thousand frames takes hours.
   model of the K053252 timing chip, and **Franck78** -- the
   [Konami Gaiapolis schematic](https://github.com/Franck78/The-Konami-Gaiapolis-schematic) of the board
   (PWB353396A). Together they are the basis of the board video timing (the "Video timing" option): the
-  chip's behaviour from the first, how it is clocked and wired on this board from the second.
+  chip's behaviour from the first, how it is clocked and wired on this board from the second. SiliconRE's
+  [K054338 trace](https://github.com/furrtek/SiliconRE/tree/master/Konami/054338) and the same schematic's video DAC
+  chain are, with the Gerbers and BOM of the K054573 / K054574 repro modules, the basis of the Colours option.
 * **Jose Tejada (jotego)** -- JTFRAME's MiSTer SDRAM clock phase and read-capture timing, which this
   core's PLL and controller settings follow.
 

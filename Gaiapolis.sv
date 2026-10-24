@@ -92,6 +92,7 @@ localparam CONF_STR = {
 	"H0O[11],Rotation,CW,CCW;",
 	"O[12],Flip Screen,Off,On;",
 	"O[13],Video timing,Board 59.88Hz,MAME 59.19Hz;",
+	"O[35],Colours,Board DAC,MAME;",
 	"O[5:3],Scandoubler Fx,None,HQ2x,CRT 25%,CRT 50%,CRT 75%;",
 	"P1,CRT Adjust;",
 	"P1O[14],CRT Adjust,Off,On;",
@@ -427,11 +428,21 @@ wire [95:0] ovl_status = {
 	test_stable[0], test_stable[1], test_stable[2], test_stable[3], test_stable[4], test_stable[5], test_stable[6], ddr_overflow,
 	ovl_overruns_l, dbg_objcount[9:2], ovl_unsup_l, ovl_shadow_l, 2'd0, ovl_funder_l, ovl_ovsrc_l
 };
+// Colours: the board's video DAC (a Konami 054573 per channel) is not linear: its output rises faster near the top,
+// so mid tones come out darker than MAME's straight 8-bit palette. Board DAC looks each channel up in the DAC's curve
+// (tools/make_dac_table.py: black stays 0, 0xEF, the brightest the game writes, is 255); MAME passes the palette
+// through. The mixer's pixel changes the clock before the next pixel enable, so this register's is there at the enable
+(* romstyle = "logic" *) reg [7:0] dac_tab [256];
+initial $readmemh("rtl/data/k054573_dac.hex", dac_tab);
+reg [23:0] dac_rgb;
+always @(posedge clk_sys)
+	dac_rgb <= status[35] ? ga_rgb : {dac_tab[ga_rgb[23:16]], dac_tab[ga_rgb[15:8]], dac_tab[ga_rgb[7:0]]};
+
 wire [7:0] ovl_r, ovl_g, ovl_b;
 dbg_overlay ovl
 (
 	.clk(clk_sys), .cen_pix(ga_cen_pix), .enable(status[9]), .de(ga_de), .vsync(ga_vs),
-	.r_in(ga_rgb[23:16]), .g_in(ga_rgb[15:8]), .b_in(ga_rgb[7:0]),
+	.r_in(dac_rgb[23:16]), .g_in(dac_rgb[15:8]), .b_in(dac_rgb[7:0]),
 	.status(ovl_status), .r_out(ovl_r), .g_out(ovl_g), .b_out(ovl_b)
 );
 

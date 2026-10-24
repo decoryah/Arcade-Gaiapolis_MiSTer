@@ -320,6 +320,23 @@ its neighbour's palette -- on the world map the edge of every label and route, d
 Read the right way every label and route of the map is one clean run of its own colour, which a PCB recording confirms
 (README, "World map colours").
 
+## Colours (Board DAC)
+
+The OSD's Colours (`status[35]`, 0 = Board DAC, the default) looks each of R, G and B up in a 256-entry table of the
+board's video DAC curve (a K054573 per channel; the model and the evidence are in the README, "Colours"). The table is
+`rtl/data/k054573_dac.hex`, written by `tools/make_dac_table.py`, read by `$readmemh` into `dac_tab` in `Gaiapolis.sv`
+with `romstyle = "logic"`: Quartus builds the three lookups from logic (the RAM block count is unchanged, 532), the
+blocks being nearly all taken. It is one register, `dac_rgb`, between the mixer's colour (`ga_rgb`) and the diagnostic overlay, so
+the overlay, Flip Screen, CRT Adjust, the scandoubler and the scaler all get the converted picture, and the long path
+from the 68000's registers through the overlay to the picture's register (`vq_rgb`) is not made any longer. The mixer
+latches its colour at phase 9 of the 12-clock pixel, the clock before the next pixel enable, so the register's output
+changes at that enable's clock and every stage that samples on the enable sees the converted colour of the same pixel.
+Colours on MAME passes `ga_rgb` through the same register.
+
+Checked with `sim/emu/run_emu.sh` run twice (`COLOURS_MAME=1` the second time) and `sim/emu/dac_check.py` on the two
+scaler pictures: every channel value of the Board DAC picture is the table's entry for the MAME run's value at the same
+place, and the geometry, frame periods and rotated frame buffer are the same in both runs.
+
 ## Verification
 
 * `sim/emu/run_emu.sh` with `TIMING_MAME=0` or `1` checks the frame period in clocks on the
@@ -375,7 +392,9 @@ Read the right way every label and route of the map is one clean run of its own 
   nearly all of the blocks (the first build used 525; Flip Screen's line buffers and the deeper
   write FIFO took four; CRT Adjust's line buffer three more), so a core change that adds memory will need the caches or the
   line buffers looked at -- and 65 of 112 DSPs. Timing closes at 96 MHz in the slow 100 C
-  model with every check positive: `gaiapolis_20261023` (the ROZ colour fix) setup +0.36 ns, hold +0.24, recovery
+  model with every check positive: `gaiapolis_20261024` (the Colours option) setup +0.15 ns, hold +0.24, recovery
+  +1.66, removal +2.22 (+0.94 on FPGA_CLK1_50), HDMI clock setup +0.46 (`releases/gaiapolis_20261024.sta.summary`,
+  seed 2; seed 1 closed too, setup +0.09); `gaiapolis_20261023` (the ROZ colour fix) setup +0.36 ns, hold +0.24, recovery
   +1.73, removal +1.63, HDMI clock setup +0.38 (`releases/gaiapolis_20261023.sta.summary`, seed 1; seed 2 missed, -0.08);
   `gaiapolis_20261014` (fast loading and Scale) setup +0.11 ns, hold +0.24,
   recovery +1.31, removal +0.97 (HDMI clock; +1.31 on the core clock), HDMI clock setup +0.42

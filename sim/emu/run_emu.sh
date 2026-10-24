@@ -3,7 +3,8 @@
 #   sim/emu/run_emu.sh <mister-layout image> <eeprom.nv> [frames after load, default 110] [out prefix] [diag]
 # Environment: PROBE=1 (public signals; needed for the flip check), FLIP=1 (Flip Screen on from the start: the picture
 # the scaler gets must be the overlay's picture turned 180 degrees, one frame late), NOLOAD=1
-# TIMING_MAME=1 / TIMING_TOGGLE=1 (Video timing), and CRT Adjust: CRT=1 turns it on, HSIZE (-16..8), HPOS (-48..28)
+# TIMING_MAME=1 / TIMING_TOGGLE=1 (Video timing), COLOURS_MAME=1 (Colours: the palette as it is, not through the board
+# DAC's table; sim/emu/dac_check.py compares the two runs' scaler pictures), and CRT Adjust: CRT=1 turns it on, HSIZE (-16..8), HPOS (-48..28)
 # and VSHIFT (-16..15) set the amounts as the OSD counts them. Every run prints the picture's geometry as the
 # monitor gets it (rows, where they start after the hsync pulse, how wide, the first row's distance from the
 # vsync pulse): with CRT=1 and the amounts at 0 it must equal the run without it, and the scaler picture

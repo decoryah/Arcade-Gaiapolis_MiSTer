@@ -174,6 +174,7 @@ int main(int argc, char **argv) {
     if (flip) set_status(12, 1);                // Flip Screen
     bool tmame = getenv("TIMING_MAME") && atoi(getenv("TIMING_MAME"));
     if (tmame) set_status(13, 1);               // Video timing: MAME's (the default is the board's)
+    if (getenv("COLOURS_MAME") && atoi(getenv("COLOURS_MAME"))) set_status(35, 1);   // Colours: MAME's (the default is the board DAC's)
     {   // CRT Adjust (status[14] on, [19:15] H-Size, [26:20] H-Position, [31:27] V-Shift), values as the OSD menu counts them
         auto field = [&](int lo, int w, int v) { for (int i = 0; i < w; i++) set_status(lo + i, (v >> i) & 1); };
         if (getenv("CRT") && atoi(getenv("CRT"))) set_status(14, 1);
